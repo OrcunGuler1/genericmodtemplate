@@ -1,0 +1,9 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "genericmod:entity/equipment/hat"
+      }
+    ]
+  }
+}

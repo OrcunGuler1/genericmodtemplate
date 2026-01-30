@@ -2,6 +2,7 @@
   "itemGroup.genericmod": "Example Mod Tab",
   "block.genericmod.example_block": "Example Block",
   "item.genericmod.example_item": "Example Item",
+  "item.genericmod.hat": "Hat",
 
   "genericmod.configuration.title": "GenericMod Configs",
   "genericmod.configuration.section.genericmod.common.toml": "GenericMod Configs",
