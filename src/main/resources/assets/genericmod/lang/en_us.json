@@ -1,0 +1,13 @@
+{
+  "itemGroup.genericmod": "Example Mod Tab",
+  "block.genericmod.example_block": "Example Block",
+  "item.genericmod.example_item": "Example Item",
+
+  "genericmod.configuration.title": "GenericMod Configs",
+  "genericmod.configuration.section.genericmod.common.toml": "GenericMod Configs",
+  "genericmod.configuration.section.genericmod.common.toml.title": "GenericMod Configs",
+  "genericmod.configuration.items": "Item List",
+  "genericmod.configuration.logDirtBlock": "Log Dirt Block",
+  "genericmod.configuration.magicNumberIntroduction": "Magic Number Text",
+  "genericmod.configuration.magicNumber": "Magic Number"
+}
