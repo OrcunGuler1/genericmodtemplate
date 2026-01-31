@@ -1,0 +1,27 @@
+{
+  "itemGroup.common_transports": "Common Transports",
+  "item.common_transports.rubber": "Rubber",
+  "item.common_transports.motorcycle_handlebars": "Motorcycle Handlebars",
+  "item.common_transports.motorcycle_seat": "Motorcycle Seat",
+  "item.common_transports.motorcycle_wheel": "Motorcycle Wheel",
+  "item.common_transports.motorcycle_body": "Motorcycle Body",
+  "item.common_transports.motorcycle_tank": "Motorcycle Tank",
+  "item.common_transports.gas_can": "Gas Can",
+  "item.common_transports.motorcycle": "Motorcycle",
+  "item.common_transports.crude_oil_bucket": "Crude Oil Bucket",
+
+  "fluid_type.common_transports.crude_oil": "Crude Oil",
+  "fluid_type.common_transports.petrol": "Petrol",
+  "block.common_transports.crude_oil": "Crude Oil",
+  "block.common_transports.petrol": "Petrol",
+  "block.common_transports.refinery": "Refinery",
+  "container.common_transports.refinery": "Refinery",
+
+  "common_transports.configuration.title": "Common Transports Configs",
+  "common_transports.configuration.section.common_transports.common.toml": "Common Transports Configs",
+  "common_transports.configuration.section.common_transports.common.toml.title": "Common Transports Configs",
+  "common_transports.configuration.items": "Item List",
+  "common_transports.configuration.logDirtBlock": "Log Dirt Block",
+  "common_transports.configuration.magicNumberIntroduction": "Magic Number Text",
+  "common_transports.configuration.magicNumber": "Magic Number"
+}

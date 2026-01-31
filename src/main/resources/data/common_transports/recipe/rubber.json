@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:coal",
+    "minecraft:slime_ball"
+  ],
+  "result": {
+    "id": "common_transports:rubber",
+    "count": 1
+  }
+}

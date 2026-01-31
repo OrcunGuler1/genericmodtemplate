@@ -1,0 +1,10 @@
+{
+  "motorcycle_idle": {
+    "sounds": [
+      {
+        "name": "common_transports:motorcycle_idle",
+        "stream": false
+      }
+    ]
+  }
+}

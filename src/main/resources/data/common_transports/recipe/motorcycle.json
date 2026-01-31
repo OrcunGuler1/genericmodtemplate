@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "  H",
+    "TBS",
+    "WIW"
+  ],
+  "key": {
+    "W": "common_transports:motorcycle_wheel",
+    "B": "common_transports:motorcycle_body",
+    "T": "common_transports:motorcycle_tank",
+    "H": "common_transports:motorcycle_handlebars",
+    "I": "minecraft:iron_ingot",
+    "S": "common_transports:motorcycle_seat"
+  },
+  "result": {
+    "id": "common_transports:motorcycle",
+    "count": 1
+  }
+}
