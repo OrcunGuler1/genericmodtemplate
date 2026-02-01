@@ -1,4 +1,4 @@
-package com.example.commontransports.client.render;
+package com.example.commontransports.vehicle.client.render;
 
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 

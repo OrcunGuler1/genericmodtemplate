@@ -30,13 +30,13 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
 
-import com.example.commontransports.client.model.MotorcycleModel;
-import com.example.commontransports.client.render.MotorcycleRenderer;
 import com.example.commontransports.client.screen.RefineryScreen;
-import com.example.commontransports.client.sound.MotorcycleIdleSoundInstance;
-import com.example.commontransports.entity.MotorcycleEntity;
 import com.example.commontransports.fluid.ModFluids;
 import com.example.commontransports.menu.ModMenuTypes;
+import com.example.commontransports.vehicle.client.model.MotorcycleModel;
+import com.example.commontransports.vehicle.client.render.MotorcycleRenderer;
+import com.example.commontransports.vehicle.client.sound.MotorcycleIdleSoundInstance;
+import com.example.commontransports.vehicle.entity.MotorcycleEntity;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
 @Mod(value = GenericMod.MODID, dist = Dist.CLIENT)

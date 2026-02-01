@@ -34,11 +34,11 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import com.example.commontransports.block.ModBlocks;
 import com.example.commontransports.block.entity.ModBlockEntities;
-import com.example.commontransports.entity.MotorcycleEntity;
+import com.example.commontransports.fluid.GasCanItem;
 import com.example.commontransports.fluid.ModFluids;
-import com.example.commontransports.item.GasCanItem;
-import com.example.commontransports.item.MotorcycleItem;
 import com.example.commontransports.menu.ModMenuTypes;
+import com.example.commontransports.vehicle.entity.MotorcycleEntity;
+import com.example.commontransports.vehicle.item.MotorcycleItem;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
 @Mod(GenericMod.MODID)

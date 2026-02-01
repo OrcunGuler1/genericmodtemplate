@@ -2,10 +2,10 @@
 // Exported for Minecraft version 1.17 or later with Mojang mappings
 // Paste this class into your mod and generate all required imports
 
-package com.example.commontransports.client.model;
+package com.example.commontransports.vehicle.client.model;
 
 import com.example.commontransports.GenericMod;
-import com.example.commontransports.client.render.MotorcycleRenderState;
+import com.example.commontransports.vehicle.client.render.MotorcycleRenderState;
 
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.geom.ModelLayerLocation;

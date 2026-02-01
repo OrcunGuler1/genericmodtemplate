@@ -1,6 +1,7 @@
 package com.example.commontransports.block;
 
 import com.example.commontransports.GenericMod;
+import com.example.commontransports.refinery.block.RefineryBlock;
 
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.block.SoundType;
@@ -11,11 +12,10 @@ import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 public class ModBlocks {
-    
+
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(GenericMod.MODID);
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(GenericMod.MODID);
-    
-    // Refinery Block
+
     public static final DeferredBlock<RefineryBlock> REFINERY = BLOCKS.registerBlock("refinery",
         RefineryBlock::new,
         BlockBehaviour.Properties.of()

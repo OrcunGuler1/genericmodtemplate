@@ -1,7 +1,7 @@
-package com.example.commontransports.client.sound;
+package com.example.commontransports.vehicle.client.sound;
 
 import com.example.commontransports.GenericMod;
-import com.example.commontransports.entity.MotorcycleEntity;
+import com.example.commontransports.vehicle.entity.MotorcycleEntity;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;

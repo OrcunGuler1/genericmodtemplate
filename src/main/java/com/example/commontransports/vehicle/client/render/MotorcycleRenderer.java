@@ -1,8 +1,8 @@
-package com.example.commontransports.client.render;
+package com.example.commontransports.vehicle.client.render;
 
 import com.example.commontransports.GenericMod;
-import com.example.commontransports.client.model.MotorcycleModel;
-import com.example.commontransports.entity.MotorcycleEntity;
+import com.example.commontransports.vehicle.client.model.MotorcycleModel;
+import com.example.commontransports.vehicle.entity.MotorcycleEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 
