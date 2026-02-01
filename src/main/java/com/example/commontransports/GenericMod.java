@@ -79,7 +79,7 @@ public class GenericMod {
     public static final DeferredHolder<EntityType<?>, EntityType<MotorcycleEntity>> MOTORCYCLE = ENTITIES.register(
             "motorcycle",
             () -> EntityType.Builder.<MotorcycleEntity>of(MotorcycleEntity::new, MobCategory.MISC)
-                    .sized(1.2f, 1.2f)
+                    .sized(0.9f, 0.8f) // width x height - smaller hitbox
                     .build(ResourceKey.create(Registries.ENTITY_TYPE,
                             Identifier.fromNamespaceAndPath(MODID, "motorcycle"))));
     public static final DeferredHolder<SoundEvent, SoundEvent> MOTORCYCLE_IDLE_SOUND = SOUND_EVENTS.register(

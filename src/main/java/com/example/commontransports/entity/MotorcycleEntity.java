@@ -16,7 +16,6 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.Input;
-import net.minecraft.world.entity.vehicle.VehicleEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
@@ -31,52 +30,66 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
-public class MotorcycleEntity extends VehicleEntity {
-    public static final int MAX_FUEL = 10000;
-    public static final int FUEL_PER_CAN = 1000;
-    public static final int FUEL_CONSUMPTION_PER_TICK = 1; // Consume 1 fuel per tick while moving
-    public static final int MAX_DURABILITY = 256;
-    public static final int INVENTORY_SIZE = 9;
-    private static final float MAX_SPEED = 2.5f;
-    private static final float MAX_REVERSE_SPEED = 0.05f;
-    private static final float ACCELERATION = 0.08f;
-    private static final float DECELERATION = 0.12f;
-    private static final float DRAG = 0.03f;
-    private static final float TURN_RATE_DEGREES = 4.0f;
-    private static final float WHEEL_ROTATION_MULT = 20.0f;
-
-    public static float getMaxSpeed() {
-        return MAX_SPEED;
-    }
-
+/**
+ * Base motorcycle entity. Uses VehicleStats.MOTORCYCLE for configuration.
+ * Extend this class or change getStats() to create different vehicle variants.
+ */
+public class MotorcycleEntity extends BaseVehicleEntity {
+    
     private static final EntityDataAccessor<Integer> FUEL = SynchedEntityData.defineId(MotorcycleEntity.class,
             EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DURABILITY = SynchedEntityData.defineId(MotorcycleEntity.class,
             EntityDataSerializers.INT);
 
-    private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
+    private SimpleContainer inventory;
     private float currentSpeed = 0.0f;
     private float currentLean = 0.0f;
     private float wheelRotation = 0.0f;
+    private float fuelAccumulator = 0.0f;
+    private boolean hadRiderLastTick = false;
 
     public MotorcycleEntity(EntityType<? extends MotorcycleEntity> type, Level level) {
         super(type, level);
         this.blocksBuilding = true;
+        this.inventory = new SimpleContainer(getStats().inventorySize);
+    }
+
+    /** Matches renderer Y translate so rider/passenger height matches the model. */
+    private static final double MODEL_Y_OFFSET = 0.5;
+
+    /** Step height 1 block, same as horses (LivingEntity.maxUpStep / AbstractHorse). */
+    @Override
+    public float maxUpStep() {
+        return 1.0f;
+    }
+
+    /**
+     * Get the vehicle stats for this entity.
+     * Override this method in subclasses to use different stats.
+     */
+    protected VehicleStats getStats() {
+        return VehicleStats.MOTORCYCLE;
     }
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(FUEL, 0);
-        builder.define(DURABILITY, MAX_DURABILITY);
+        builder.define(DURABILITY, VehicleStats.MOTORCYCLE.maxDurability); // Use default for initial
     }
 
     @Override
     public void tick() {
         super.tick();
+        VehicleStats stats = getStats();
 
         LivingEntity rider = getControllingPassenger();
         if (rider != null) {
+            // Just mounted: start from standstill so no carried-over momentum
+            if (!hadRiderLastTick) {
+                currentSpeed = 0.0f;
+                setDeltaMovement(Vec3.ZERO);
+            }
             handleRiderInput(rider);
             
             // Display fuel level to rider (every 20 ticks = 1 second)
@@ -84,20 +97,43 @@ public class MotorcycleEntity extends VehicleEntity {
                 displayFuelLevel(serverPlayer);
             }
         } else {
-            setDeltaMovement(getDeltaMovement().scale(0.6));
+            // No rider: coast to stop using deceleration params, then zero momentum
+            currentSpeed = approach(currentSpeed, 0.0f, stats.deceleration);
+            currentLean = approach(currentLean, 0.0f, stats.leanSpeed);
+            double forwardDir = currentSpeed >= 0.0f ? 1.0 : -1.0;
+            Vec3 inputDir = new Vec3(0.0, 0.0, forwardDir);
+            float speedMagnitude = Math.abs(currentSpeed);
+            Vec3 motion = inputDir.scale(speedMagnitude).yRot(-getYRot() * Mth.DEG_TO_RAD);
+            setDeltaMovement(new Vec3(motion.x, getDeltaMovement().y, motion.z));
         }
 
-        move(MoverType.SELF, getDeltaMovement());
-        setDeltaMovement(getDeltaMovement().scale(0.9));
+        applyVehicleGravity();
+
+        Vec3 delta = getDeltaMovement();
+        move(MoverType.SELF, delta);
+
+        // Explicit step-up: vanilla Entity.move() step-up may not run for VehicleEntity in 1.21
+        if (horizontalCollision && (delta.x != 0 || delta.z != 0)) {
+            double yBeforeStep = getY();
+            setPos(getX(), getY() + maxUpStep(), getZ());
+            move(MoverType.SELF, new Vec3(delta.x, 0, delta.z));
+            if (horizontalCollision) {
+                setPos(getX(), yBeforeStep, getZ());
+            }
+        }
+
+        setDeltaMovement(getDeltaMovement().scale(stats.movementFriction));
         updateWheelRotation();
+        hadRiderLastTick = (rider != null);
     }
-    
+
     private void displayFuelLevel(ServerPlayer player) {
+        VehicleStats stats = getStats();
         int fuel = getFuel();
-        int fuelPercent = (int) ((float) fuel / MAX_FUEL * 100);
+        int fuelPercent = (int) ((float) fuel / stats.maxFuel * 100);
         String fuelBar = createFuelBar(fuelPercent);
         Component message = Component.literal("Fuel: " + fuelBar + " " + fuelPercent + "%");
-        player.displayClientMessage(message, true); // true = action bar
+        player.displayClientMessage(message, true);
     }
     
     private String createFuelBar(int percent) {
@@ -115,6 +151,7 @@ public class MotorcycleEntity extends VehicleEntity {
     }
 
     private void handleRiderInput(LivingEntity rider) {
+        VehicleStats stats = getStats();
         Vec3 move = getRiderMoveVector(rider);
         float forward = (float) move.z;
         float strafe = (float) move.x;
@@ -127,10 +164,10 @@ public class MotorcycleEntity extends VehicleEntity {
         
         boolean accelerating = forward > 0f && hasFuel;
         boolean reversing = forward < 0f && hasFuel;
-        float targetSpeed = accelerating ? MAX_SPEED : (reversing ? -MAX_REVERSE_SPEED : 0.0f);
-        float step = accelerating || reversing ? ACCELERATION : DRAG;
+        float targetSpeed = accelerating ? stats.maxSpeed : (reversing ? -stats.maxReverseSpeed : 0.0f);
+        float step = accelerating || reversing ? stats.acceleration : stats.drag;
         if ((reversing && currentSpeed > 0.0f) || (accelerating && currentSpeed < 0.0f)) {
-            step = DECELERATION;
+            step = stats.deceleration;
         }
         currentSpeed = approach(currentSpeed, targetSpeed, step);
 
@@ -140,11 +177,24 @@ public class MotorcycleEntity extends VehicleEntity {
         }
 
         double forwardDir = currentSpeed >= 0.0f ? 1.0 : -1.0;
-        float speedRatio = Mth.clamp(Math.abs(currentSpeed) / MAX_SPEED, 0.0f, 1.0f);
-        float targetLean = Mth.clamp(strafe * 65.0f * speedRatio, -65.0f, 65.0f);
-        currentLean = approach(currentLean, targetLean, 3.0f);
-        float leanRatio = currentLean / 65.0f;
-        float turnAmount = -leanRatio * TURN_RATE_DEGREES * speedRatio;
+        float speedRatio = Mth.clamp(Math.abs(currentSpeed) / stats.maxSpeed, 0.0f, 1.0f);
+        
+        // Low-speed maneuvering: allow sharp turns when slow or stationary
+        // At low speed, use direct turning; at high speed, use lean-based turning
+        float directTurnStrength = 1.0f - Mth.clamp(speedRatio / stats.lowSpeedThreshold, 0.0f, 1.0f);
+        float leanTurnStrength = Mth.clamp((speedRatio - 0.1f) / (stats.lowSpeedThreshold - 0.1f), 0.0f, 1.0f);
+        
+        // Direct turning for low speed (like walking a bike)
+        float directTurn = -strafe * stats.directTurnRate * directTurnStrength;
+        
+        // Lean-based turning for higher speeds
+        float targetLean = Mth.clamp(strafe * stats.maxLeanAngle * leanTurnStrength, -stats.maxLeanAngle, stats.maxLeanAngle);
+        currentLean = approach(currentLean, targetLean, stats.leanSpeed);
+        float leanRatio = currentLean / stats.maxLeanAngle;
+        float leanTurn = -leanRatio * stats.turnRateDegrees * speedRatio;
+        
+        // Combine both turning methods
+        float turnAmount = directTurn + leanTurn;
         setYRot(getYRot() + turnAmount);
 
         Vec3 inputDir = new Vec3(0.0, 0.0, forwardDir);
@@ -160,14 +210,13 @@ public class MotorcycleEntity extends VehicleEntity {
         setDeltaMovement(new Vec3(motion.x, getDeltaMovement().y, motion.z));
     }
     
-    private float fuelAccumulator = 0.0f;
-    
     private void consumeFuel(float speed) {
+        VehicleStats stats = getStats();
         int current = getFuel();
         if (current > 0) {
-            // Base consumption + speed-scaled consumption (up to 5x at max speed)
-            float speedRatio = speed / MAX_SPEED;
-            float consumption = FUEL_CONSUMPTION_PER_TICK * (1.0f + 4.0f * speedRatio);
+            // Base consumption + speed-scaled consumption
+            float speedRatio = speed / stats.maxSpeed;
+            float consumption = stats.fuelConsumptionPerTick * (1.0f + stats.fuelConsumptionSpeedMultiplier * speedRatio);
             
             // Accumulate fractional fuel and consume whole units
             fuelAccumulator += consumption;
@@ -187,8 +236,9 @@ public class MotorcycleEntity extends VehicleEntity {
     }
 
     private void updateWheelRotation() {
+        VehicleStats stats = getStats();
         float speed = (float) getDeltaMovement().horizontalDistance();
-        wheelRotation += speed * WHEEL_ROTATION_MULT;
+        wheelRotation += speed * stats.wheelRotationMultiplier;
         if (wheelRotation > Mth.TWO_PI) {
             wheelRotation -= Mth.TWO_PI;
         }
@@ -200,6 +250,10 @@ public class MotorcycleEntity extends VehicleEntity {
 
     public float getWheelRotation() {
         return wheelRotation;
+    }
+    
+    public float getMaxSpeed() {
+        return getStats().maxSpeed;
     }
 
     private Vec3 getRiderMoveVector(LivingEntity rider) {
@@ -214,8 +268,7 @@ public class MotorcycleEntity extends VehicleEntity {
 
     @Override
     public boolean canAddPassenger(Entity passenger) {
-        // Allow driver + 1 passenger (2 total)
-        return getPassengers().size() < 2 && passenger instanceof LivingEntity;
+        return getPassengers().size() < getStats().maxPassengers && passenger instanceof LivingEntity;
     }
 
     @Override
@@ -224,11 +277,12 @@ public class MotorcycleEntity extends VehicleEntity {
             return;
         }
         
+        VehicleStats stats = getStats();
         int passengerIndex = getPassengers().indexOf(passenger);
         
-        // Driver sits at front, passenger sits behind
-        double yOffset = getPassengersRidingOffset();
-        double zOffset = passengerIndex == 0 ? 0.0 : -0.6; // Passenger sits 0.6 blocks behind driver
+        // Driver sits at configured offset, passenger sits behind driver (Y includes model offset so rider matches visual seat)
+        double yOffset = MODEL_Y_OFFSET + stats.riderYOffset;
+        double zOffset = passengerIndex == 0 ? stats.driverZOffset : (stats.driverZOffset + stats.passengerZOffset);
         
         // Apply offset relative to bike rotation
         float yawRad = -getYRot() * Mth.DEG_TO_RAD;
@@ -245,7 +299,7 @@ public class MotorcycleEntity extends VehicleEntity {
     }
 
     protected double getPassengersRidingOffset() {
-        return 0.65;
+        return MODEL_Y_OFFSET + getStats().riderYOffset;
     }
     
     /**
@@ -294,7 +348,8 @@ public class MotorcycleEntity extends VehicleEntity {
     }
 
     private InteractionResult handleFueling(Player player, ItemStack held) {
-        if (getFuel() >= MAX_FUEL) {
+        VehicleStats stats = getStats();
+        if (getFuel() >= stats.maxFuel) {
             return InteractionResult.PASS;
         }
 
@@ -305,7 +360,7 @@ public class MotorcycleEntity extends VehicleEntity {
                 return InteractionResult.PASS; // Gas can is empty
             }
             
-            int spaceInTank = MAX_FUEL - getFuel();
+            int spaceInTank = stats.maxFuel - getFuel();
             int toTransfer = Math.min(canFuel, spaceInTank);
             
             if (toTransfer > 0 && !player.getAbilities().instabuild) {
@@ -392,7 +447,8 @@ public class MotorcycleEntity extends VehicleEntity {
     }
 
     public void setDurability(int value) {
-        entityData.set(DURABILITY, Mth.clamp(value, 0, MAX_DURABILITY));
+        VehicleStats stats = getStats();
+        entityData.set(DURABILITY, Mth.clamp(value, 0, stats.maxDurability));
     }
 
     @Override
@@ -404,7 +460,7 @@ public class MotorcycleEntity extends VehicleEntity {
         setDurability(getDurability() - damage);
         if (getDurability() <= 0) {
             discard();
-            dropStack(new ItemStack(GenericMod.MOTORCYCLE_ITEM.get()));
+            dropStack(new ItemStack(getDropItem()));
         }
         return true;
     }
@@ -441,8 +497,9 @@ public class MotorcycleEntity extends VehicleEntity {
 
     @Override
     protected void readAdditionalSaveData(ValueInput input) {
+        VehicleStats stats = getStats();
         setFuel(input.getIntOr("Fuel", 0));
-        setDurability(input.getIntOr("Durability", MAX_DURABILITY));
+        setDurability(input.getIntOr("Durability", stats.maxDurability));
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             inventory.setItem(i, ItemStack.EMPTY);
         }

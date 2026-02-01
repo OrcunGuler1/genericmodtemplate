@@ -46,7 +46,7 @@ public class MotorcycleRenderer extends EntityRenderer<MotorcycleEntity, Motorcy
                        CameraRenderState cameraRenderState) {
         super.submit(renderState, poseStack, nodeCollector, cameraRenderState);
         poseStack.pushPose();
-        poseStack.translate(0.0F, 1.0F, 0.0F);
+        poseStack.translate(0.0F, 1.5F, 0.0F); // half block higher so wheels sit on ground visually
         poseStack.mulPose(Axis.YP.rotationDegrees(180.0F - renderState.yRot));
         poseStack.mulPose(Axis.ZP.rotationDegrees(renderState.lean));
         poseStack.scale(-1.0F, -1.0F, 1.0F);
