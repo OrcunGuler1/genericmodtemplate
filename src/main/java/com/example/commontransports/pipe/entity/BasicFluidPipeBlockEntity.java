@@ -1,10 +1,17 @@
 package com.example.commontransports.pipe.entity;
 
 import com.example.commontransports.block.entity.ModBlockEntities;
+import com.example.commontransports.pipe.menu.BasicFluidPipeMenu;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -20,12 +27,65 @@ import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
 import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Arrays;
 import java.util.function.Predicate;
 
 /**
  * Minimal fluid transport node with automatic pull/push behavior on all sides.
  */
-public class BasicFluidPipeBlockEntity extends BlockEntity {
+public class BasicFluidPipeBlockEntity extends BlockEntity implements MenuProvider {
+
+    public enum SideMode {
+        DISABLED(0, false, false),
+        PULL(1, true, false),
+        PUSH(2, false, true),
+        BOTH(3, true, true);
+
+        private final int id;
+        private final boolean allowsPull;
+        private final boolean allowsPush;
+
+        SideMode(int id, boolean allowsPull, boolean allowsPush) {
+            this.id = id;
+            this.allowsPull = allowsPull;
+            this.allowsPush = allowsPush;
+        }
+
+        public int id() {
+            return id;
+        }
+
+        public boolean allowsPull() {
+            return allowsPull;
+        }
+
+        public boolean allowsPush() {
+            return allowsPush;
+        }
+
+        public SideMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+
+        public SideMode previous() {
+            return values()[(ordinal() - 1 + values().length) % values().length];
+        }
+
+        public SideMode withoutPush() {
+            return switch (this) {
+                case DISABLED, PULL -> this;
+                case PUSH -> DISABLED;
+                case BOTH -> PULL;
+            };
+        }
+
+        public static SideMode fromId(int id) {
+            for (SideMode mode : values()) {
+                if (mode.id == id) return mode;
+            }
+            return DISABLED;
+        }
+    }
 
     public static final int TANK_CAPACITY = 4000;
     public static final int PULL_RATE_PER_SIDE = 200;
@@ -34,9 +94,30 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
     private Fluid storedFluid = Fluids.EMPTY;
     private int storedAmount = 0;
     private int recentReceiveMask = 0;
+    private final SideMode[] sideModes = createDefaultSideModes();
 
     private final PipeTankHandler fluidHandler = new PipeTankHandler();
     private final ResourceHandler<FluidResource>[] sidedHandlers = createSidedHandlers();
+    private final ContainerData data = new ContainerData() {
+        @Override
+        public int get(int index) {
+            return switch (index) {
+                case 0 -> storedAmount;
+                case 1 -> TANK_CAPACITY;
+                case 2 -> storedFluid == Fluids.EMPTY ? -1 : BuiltInRegistries.FLUID.getId(storedFluid);
+                case 3, 4, 5, 6, 7, 8 -> sideModes[index - 3].id();
+                default -> 0;
+            };
+        }
+
+        @Override
+        public void set(int index, int value) {}
+
+        @Override
+        public int getCount() {
+            return BasicFluidPipeMenu.DATA_COUNT;
+        }
+    };
 
     public BasicFluidPipeBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.BASIC_FLUID_PIPE.get(), pos, state);
@@ -50,6 +131,72 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
         return side == null ? fluidHandler : sidedHandlers[side.ordinal()];
     }
 
+    @Override
+    public Component getDisplayName() {
+        return Component.translatable("container.common_transports.basic_fluid_pipe");
+    }
+
+    @Override
+    public @Nullable AbstractContainerMenu createMenu(int containerId, Inventory playerInventory, Player player) {
+        return new BasicFluidPipeMenu(containerId, playerInventory, this, data);
+    }
+
+    public SideMode getSideMode(Direction side) {
+        return sideModes[side.ordinal()];
+    }
+
+    public void cycleSideMode(Direction side) {
+        setSideMode(side, getSideMode(side).next());
+    }
+
+    public void cycleSideModeReverse(Direction side) {
+        setSideMode(side, getSideMode(side).previous());
+    }
+
+    public void setSideMode(Direction side, SideMode mode) {
+        int index = side.ordinal();
+        if (sideModes[index] == mode) return;
+        sideModes[index] = mode;
+        setChanged();
+    }
+
+    public void disableAllOutputs() {
+        boolean changed = false;
+        for (Direction side : Direction.values()) {
+            int index = side.ordinal();
+            SideMode updated = sideModes[index].withoutPush();
+            if (updated != sideModes[index]) {
+                sideModes[index] = updated;
+                changed = true;
+            }
+        }
+        if (changed) {
+            setChanged();
+        }
+    }
+
+    public void disableAllSides() {
+        boolean changed = false;
+        for (Direction side : Direction.values()) {
+            int index = side.ordinal();
+            if (sideModes[index] != SideMode.DISABLED) {
+                sideModes[index] = SideMode.DISABLED;
+                changed = true;
+            }
+        }
+        if (changed) {
+            setChanged();
+        }
+    }
+
+    private boolean allowsPull(Direction side) {
+        return getSideMode(side).allowsPull();
+    }
+
+    private boolean allowsPush(Direction side) {
+        return getSideMode(side).allowsPush();
+    }
+
     private void tickServer() {
         if (level == null || level.isClientSide()) return;
 
@@ -59,12 +206,14 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
 
         // Pull first so the pipe can forward in the same tick. Track pull sides to avoid instant backflow.
         for (Direction side : Direction.values()) {
+            if (!allowsPull(side)) continue;
             int moved = pullFromNeighbor(side);
             if (moved > 0) {
                 blockedPushMask |= sideBit(side);
             }
         }
         for (Direction side : Direction.values()) {
+            if (!allowsPush(side)) continue;
             if ((blockedPushMask & sideBit(side)) != 0) continue;
             pushToNeighbor(side);
         }
@@ -112,11 +261,19 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
         if (storedAmount > 0 && storedFluid != Fluids.EMPTY) {
             output.putString("StoredFluid", BuiltInRegistries.FLUID.getKey(storedFluid).toString());
         }
+        for (Direction side : Direction.values()) {
+            output.putInt("SideMode_" + side.getSerializedName(), sideModes[side.ordinal()].id());
+        }
     }
 
     @Override
     protected void loadAdditional(ValueInput input) {
         super.loadAdditional(input);
+        for (Direction side : Direction.values()) {
+            int modeId = input.getIntOr("SideMode_" + side.getSerializedName(), SideMode.DISABLED.id());
+            sideModes[side.ordinal()] = SideMode.fromId(modeId);
+        }
+
         storedAmount = Math.max(0, Math.min(TANK_CAPACITY, input.getIntOr("StoredAmount", 0)));
         if (storedAmount <= 0) {
             storedFluid = Fluids.EMPTY;
@@ -139,6 +296,12 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
 
     private static int sideBit(Direction side) {
         return 1 << side.ordinal();
+    }
+
+    private static SideMode[] createDefaultSideModes() {
+        SideMode[] modes = new SideMode[Direction.values().length];
+        Arrays.fill(modes, SideMode.DISABLED);
+        return modes;
     }
 
     @SuppressWarnings("unchecked")
@@ -184,6 +347,7 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
 
         @Override
         public int insert(int index, FluidResource resource, int amount, TransactionContext transaction) {
+            if (!allowsPull(side)) return 0;
             int inserted = fluidHandler.insert(index, resource, amount, transaction);
             if (inserted > 0) {
                 recentReceiveMask |= sideBit(side);
@@ -193,6 +357,7 @@ public class BasicFluidPipeBlockEntity extends BlockEntity {
 
         @Override
         public int extract(int index, FluidResource resource, int amount, TransactionContext transaction) {
+            if (!allowsPush(side)) return 0;
             return fluidHandler.extract(index, resource, amount, transaction);
         }
     }

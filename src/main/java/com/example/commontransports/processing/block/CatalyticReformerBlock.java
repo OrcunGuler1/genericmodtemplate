@@ -54,20 +54,12 @@ public class CatalyticReformerBlock extends BaseEntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof CatalyticReformerBlockEntity reformer)) return InteractionResult.PASS;
 
-        if (stack.is(GenericMod.SPEED_UPGRADE.get())) {
-            if (reformer.installSpeedUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
-        if (stack.is(GenericMod.EFFICIENCY_UPGRADE.get())) {
-            if (reformer.installEfficiencyUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
+        InteractionResult upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.SPEED_UPGRADE.get(), reformer.getMaxUpgradesPerType(), reformer::installSpeedUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
+        upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.EFFICIENCY_UPGRADE.get(), reformer.getMaxUpgradesPerType(), reformer::installEfficiencyUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
 
         // Generic fluid-container compatibility via NeoForge fluid item capability.
         if (net.neoforged.neoforge.transfer.fluid.FluidUtil.interactWithFluidHandler(

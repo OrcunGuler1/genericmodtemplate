@@ -16,6 +16,8 @@ public class RefineryScreen extends UnifiedProcessingScreen<RefineryMenu> {
 
     /** Flush buttons sit beside each tank, near the bottom. */
     private static final int FLUSH_BUTTON_SIZE = 8;
+    private Button flushInputButton;
+    private Button flushOutputButton;
 
     public RefineryScreen(RefineryMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
@@ -36,14 +38,33 @@ public class RefineryScreen extends UnifiedProcessingScreen<RefineryMenu> {
         int inputBtnX = leftPos + INPUT_TANK_X + TANK_WIDTH + 1;
         int outputBtnX = leftPos + OUTPUT_TANK_X - FLUSH_BUTTON_SIZE - 1;
 
-        addRenderableWidget(Button.builder(Component.literal("x"),
+        flushInputButton = addRenderableWidget(Button.builder(Component.literal("x"),
                 b -> sendRefineryAction(RefineryMenu.ACTION_FLUSH_INPUT))
                 .bounds(inputBtnX, flushY, FLUSH_BUTTON_SIZE, FLUSH_BUTTON_SIZE)
                 .build());
-        addRenderableWidget(Button.builder(Component.literal("x"),
+        flushOutputButton = addRenderableWidget(Button.builder(Component.literal("x"),
                 b -> sendRefineryAction(RefineryMenu.ACTION_FLUSH_OUTPUT))
                 .bounds(outputBtnX, flushY, FLUSH_BUTTON_SIZE, FLUSH_BUTTON_SIZE)
                 .build());
+        updateFlushButtonVisibility();
+    }
+
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+        updateFlushButtonVisibility();
+    }
+
+    private void updateFlushButtonVisibility() {
+        boolean visible = isProcessPanelActive();
+        if (flushInputButton != null) {
+            flushInputButton.visible = visible;
+            flushInputButton.active = visible;
+        }
+        if (flushOutputButton != null) {
+            flushOutputButton.visible = visible;
+            flushOutputButton.active = visible;
+        }
     }
 
     @Override

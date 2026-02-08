@@ -14,6 +14,10 @@ import net.minecraft.resources.Identifier;
 public record ProcessingActionPayload(BlockPos blockPos, int actionId) implements CustomPacketPayload {
 
     public static final int ACTION_PICKUP_OUTPUT = 0;
+    public static final int ACTION_EJECT_SPEED_UPGRADE = 1;
+    public static final int ACTION_EJECT_EFFICIENCY_UPGRADE = 2;
+    @Deprecated public static final int ACTION_UNINSTALL_SPEED_UPGRADE = ACTION_EJECT_SPEED_UPGRADE;
+    @Deprecated public static final int ACTION_UNINSTALL_EFFICIENCY_UPGRADE = ACTION_EJECT_EFFICIENCY_UPGRADE;
 
     public static final Identifier ID = Identifier.fromNamespaceAndPath(GenericMod.MODID, "processing_action");
     public static final CustomPacketPayload.Type<ProcessingActionPayload> TYPE = new CustomPacketPayload.Type<>(ID);

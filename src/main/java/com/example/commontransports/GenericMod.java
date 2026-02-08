@@ -33,10 +33,15 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import com.example.commontransports.block.ModBlocks;
 import com.example.commontransports.block.entity.ModBlockEntities;
 import com.example.commontransports.fluid.GasCanItem;
+import com.example.commontransports.item.UpgradeItem;
 import com.example.commontransports.fluid.ModFluids;
 import com.example.commontransports.menu.ModMenuTypes;
+import com.example.commontransports.network.PipeSideConfigPayload;
+import com.example.commontransports.network.PipeSideConfigPayloadHandler;
 import com.example.commontransports.network.ProcessingActionPayload;
 import com.example.commontransports.network.ProcessingPayloadHandler;
+import com.example.commontransports.network.ProcessingSideConfigPayload;
+import com.example.commontransports.network.ProcessingSideConfigPayloadHandler;
 import com.example.commontransports.network.RefineryActionPayload;
 import com.example.commontransports.network.RefineryPayloadHandler;
 import com.example.commontransports.vehicle.entity.ChopperEntity;
@@ -80,8 +85,8 @@ public class GenericMod {
     public static final DeferredItem<Item> MOTORCYCLE_ITEM = ITEMS.registerItem("motorcycle", MotorcycleItem::new);
     public static final DeferredItem<Item> CHOPPER_ITEM = ITEMS.registerItem("chopper", ChopperItem::new);
     public static final DeferredItem<Item> GAS_CAN = ITEMS.registerItem("gas_can", GasCanItem::new);
-    public static final DeferredItem<Item> SPEED_UPGRADE = ITEMS.registerItem("speed_upgrade", Item::new);
-    public static final DeferredItem<Item> EFFICIENCY_UPGRADE = ITEMS.registerItem("efficiency_upgrade", Item::new);
+    public static final DeferredItem<Item> SPEED_UPGRADE = ITEMS.registerItem("speed_upgrade", UpgradeItem::new);
+    public static final DeferredItem<Item> EFFICIENCY_UPGRADE = ITEMS.registerItem("efficiency_upgrade", UpgradeItem::new);
 
     public static final DeferredHolder<EntityType<?>, EntityType<MotorcycleEntity>> MOTORCYCLE = ENTITIES.register(
             "motorcycle",
@@ -235,6 +240,16 @@ public class GenericMod {
             ProcessingActionPayload.TYPE,
             ProcessingActionPayload.STREAM_CODEC,
             ProcessingPayloadHandler::handleProcessingAction
+        );
+        registrar.playToServer(
+            ProcessingSideConfigPayload.TYPE,
+            ProcessingSideConfigPayload.STREAM_CODEC,
+            ProcessingSideConfigPayloadHandler::handleProcessingSideConfig
+        );
+        registrar.playToServer(
+            PipeSideConfigPayload.TYPE,
+            PipeSideConfigPayload.STREAM_CODEC,
+            PipeSideConfigPayloadHandler::handlePipeSideConfig
         );
     }
 

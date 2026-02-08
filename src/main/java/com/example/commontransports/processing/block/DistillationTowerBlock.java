@@ -54,20 +54,12 @@ public class DistillationTowerBlock extends BaseEntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof DistillationTowerBlockEntity tower)) return InteractionResult.PASS;
 
-        if (stack.is(GenericMod.SPEED_UPGRADE.get())) {
-            if (tower.installSpeedUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
-        if (stack.is(GenericMod.EFFICIENCY_UPGRADE.get())) {
-            if (tower.installEfficiencyUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
+        InteractionResult upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.SPEED_UPGRADE.get(), tower.getMaxUpgradesPerType(), tower::installSpeedUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
+        upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.EFFICIENCY_UPGRADE.get(), tower.getMaxUpgradesPerType(), tower::installEfficiencyUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
 
         // Generic fluid-container compatibility via NeoForge fluid item capability.
         if (net.neoforged.neoforge.transfer.fluid.FluidUtil.interactWithFluidHandler(

@@ -6,6 +6,7 @@ import com.example.commontransports.menu.ModMenuTypes;
 import com.example.commontransports.processing.entity.CatalyticReformerBlockEntity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -28,7 +29,7 @@ public class CatalyticReformerMenu extends AbstractContainerMenu implements Proc
     private final ContainerData data;
 
     public CatalyticReformerMenu(int containerId, Inventory playerInventory, FriendlyByteBuf extraData) {
-        this(containerId, playerInventory, resolveContext(playerInventory, extraData), new SimpleContainerData(7));
+        this(containerId, playerInventory, resolveContext(playerInventory, extraData), new SimpleContainerData(18));
     }
 
     public CatalyticReformerMenu(int containerId, Inventory playerInventory, BlockEntity blockEntity, ContainerData data) {
@@ -85,6 +86,12 @@ public class CatalyticReformerMenu extends AbstractContainerMenu implements Proc
     @Override public int getProcessTime() { return CatalyticReformerBlockEntity.PROCESS_TIME; }
     @Override public int getEnergyStored() { return data.get(5); }
     @Override public int getEnergyCapacity() { return data.get(6); }
+    @Override public int getSpeedUpgrades() { return data.get(7); }
+    @Override public int getEfficiencyUpgrades() { return data.get(8); }
+    @Override public int getMaxUpgradesPerType() { return data.get(9); }
+    @Override public int getEffectiveProcessRate() { return data.get(10); }
+    @Override public int getEffectiveFePerTick() { return data.get(11); }
+    @Override public int getSideModeId(Direction side) { return data.get(12 + side.ordinal()); }
 
     @Override
     public BlockPos getBlockPos() {

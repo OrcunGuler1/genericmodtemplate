@@ -40,6 +40,17 @@ public class CatalyticReformerBlockEntity extends AbstractPoweredFluidProcessorB
                 case 4 -> getProcessProgress();
                 case 5 -> getEnergyStored();
                 case 6 -> getEnergyCapacity();
+                case 7 -> getSpeedUpgrades();
+                case 8 -> getEfficiencyUpgrades();
+                case 9 -> getMaxUpgradesPerType();
+                case 10 -> getEffectiveProcessRate();
+                case 11 -> getEffectiveFePerTick();
+                case 12 -> getSideMode(net.minecraft.core.Direction.DOWN).id();
+                case 13 -> getSideMode(net.minecraft.core.Direction.UP).id();
+                case 14 -> getSideMode(net.minecraft.core.Direction.NORTH).id();
+                case 15 -> getSideMode(net.minecraft.core.Direction.SOUTH).id();
+                case 16 -> getSideMode(net.minecraft.core.Direction.WEST).id();
+                case 17 -> getSideMode(net.minecraft.core.Direction.EAST).id();
                 default -> 0;
             };
         }
@@ -49,7 +60,7 @@ public class CatalyticReformerBlockEntity extends AbstractPoweredFluidProcessorB
 
         @Override
         public int getCount() {
-            return 7;
+            return 18;
         }
     };
 

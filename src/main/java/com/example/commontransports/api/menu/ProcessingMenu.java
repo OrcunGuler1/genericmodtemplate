@@ -1,6 +1,7 @@
 package com.example.commontransports.api.menu;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 /**
  * Container menu that exposes input/output fluid amounts and processing progress
@@ -17,6 +18,31 @@ public interface ProcessingMenu {
     int getProcessTime();
     int getEnergyStored();
     int getEnergyCapacity();
+
+    default int getSpeedUpgrades() {
+        return 0;
+    }
+
+    default int getEfficiencyUpgrades() {
+        return 0;
+    }
+
+    default int getMaxUpgradesPerType() {
+        return 0;
+    }
+
+    default int getEffectiveProcessRate() {
+        return 0;
+    }
+
+    default int getEffectiveFePerTick() {
+        return 0;
+    }
+
+    default int getSideModeId(Direction side) {
+        return 3;
+    }
+
     default int getProgressScaled(int pixels) {
         int progress = getProgress();
         int maxProgress = getProcessTime();
