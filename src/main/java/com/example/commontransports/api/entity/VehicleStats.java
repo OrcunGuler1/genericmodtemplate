@@ -79,7 +79,7 @@ public class VehicleStats {
             .maxSpeed(1.8f).maxReverseSpeed(0.03f).acceleration(0.05f).deceleration(0.08f).drag(0.04f)
             .idleFriction(0.5f).movementFriction(0.88f)
             .turnRateDegrees(3.0f).directTurnRate(2.5f).lowSpeedThreshold(0.35f).maxLeanAngle(45.0f).leanSpeed(8.0f)
-            .wheelRotationMultiplier(15.0f).maxPassengers(2).riderYOffset(0.45).driverZOffset(-0.6).passengerZOffset(-0.8)
+            .wheelRotationMultiplier(15.0f).maxPassengers(1).riderYOffset(-0.3).driverZOffset(-0.4).passengerZOffset(-0.8)
             .build();
 
     public static final VehicleStats SCOOTER = new Builder()

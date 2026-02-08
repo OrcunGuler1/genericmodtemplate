@@ -1,5 +1,6 @@
 package com.example.commontransports.refinery.block;
 
+import com.example.commontransports.GenericMod;
 import com.example.commontransports.api.item.FluidContainerItem;
 import com.example.commontransports.block.entity.ModBlockEntities;
 import com.example.commontransports.fluid.ModFluids;
@@ -54,10 +55,31 @@ public class RefineryBlock extends BaseEntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof RefineryBlockEntity refinery)) return InteractionResult.PASS;
 
-        if (stack.is(ModFluids.CRUDE_OIL_BUCKET.get())) {
-            int filled = refinery.fillInput(ModFluids.CRUDE_OIL_SOURCE.get(), FluidType.BUCKET_VOLUME, false);
+        if (stack.is(GenericMod.SPEED_UPGRADE.get())) {
+            if (refinery.installSpeedUpgrade()) {
+                if (!player.getAbilities().instabuild) stack.shrink(1);
+                return InteractionResult.SUCCESS;
+            }
+            return InteractionResult.PASS;
+        }
+        if (stack.is(GenericMod.EFFICIENCY_UPGRADE.get())) {
+            if (refinery.installEfficiencyUpgrade()) {
+                if (!player.getAbilities().instabuild) stack.shrink(1);
+                return InteractionResult.SUCCESS;
+            }
+            return InteractionResult.PASS;
+        }
+
+        // Generic fluid-container compatibility via NeoForge fluid item capability.
+        if (net.neoforged.neoforge.transfer.fluid.FluidUtil.interactWithFluidHandler(
+                player, hand, pos, refinery.getFluidHandler(null))) {
+            return InteractionResult.SUCCESS;
+        }
+
+        if (stack.is(ModFluids.REFORMATE_BUCKET.get())) {
+            int filled = refinery.fillInput(ModFluids.REFORMATE_SOURCE.get(), FluidType.BUCKET_VOLUME, false);
             if (filled == FluidType.BUCKET_VOLUME) {
-                refinery.fillInput(ModFluids.CRUDE_OIL_SOURCE.get(), FluidType.BUCKET_VOLUME, true);
+                refinery.fillInput(ModFluids.REFORMATE_SOURCE.get(), FluidType.BUCKET_VOLUME, true);
                 if (!player.getAbilities().instabuild) player.setItemInHand(hand, new ItemStack(Items.BUCKET));
                 return InteractionResult.SUCCESS;
             }
@@ -71,7 +93,7 @@ public class RefineryBlock extends BaseEntityBlock {
                     refinery.drainInput(FluidType.BUCKET_VOLUME, true);
                     if (!player.getAbilities().instabuild) {
                         stack.shrink(1);
-                        player.addItem(new ItemStack(ModFluids.CRUDE_OIL_BUCKET.get()));
+                        player.addItem(new ItemStack(ModFluids.REFORMATE_BUCKET.get()));
                     }
                     return InteractionResult.SUCCESS;
                 }
@@ -82,8 +104,8 @@ public class RefineryBlock extends BaseEntityBlock {
         if (stack.getItem() instanceof FluidContainerItem fc) {
             int currentFuel = fc.getFluidAmount(stack);
             int spaceInCan = fc.getCapacity() - currentFuel;
-            if (spaceInCan >= FluidType.BUCKET_VOLUME && refinery.getOutputAmount() >= FluidType.BUCKET_VOLUME) {
-                int drained = refinery.drainOutput(FluidType.BUCKET_VOLUME, true);
+            if (spaceInCan > 0 && refinery.getOutputAmount() > 0) {
+                int drained = refinery.drainOutput(Math.min(spaceInCan, refinery.getOutputAmount()), true);
                 if (drained > 0) {
                     fc.setFluidAmount(stack, currentFuel + drained);
                     return InteractionResult.SUCCESS;

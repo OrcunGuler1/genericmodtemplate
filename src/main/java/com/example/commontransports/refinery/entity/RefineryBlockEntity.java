@@ -5,10 +5,9 @@ import com.example.commontransports.api.block.HasOutputFluidTank;
 import com.example.commontransports.api.block.HasProcessingProgress;
 import com.example.commontransports.block.entity.ModBlockEntities;
 import com.example.commontransports.fluid.ModFluids;
+import com.example.commontransports.processing.entity.AbstractPoweredFluidProcessorBlockEntity;
 import com.example.commontransports.refinery.menu.RefineryMenu;
-
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -16,60 +15,76 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
-import net.neoforged.neoforge.transfer.CombinedResourceHandler;
-import net.neoforged.neoforge.transfer.ResourceHandler;
-import net.neoforged.neoforge.transfer.fluid.FluidResource;
-import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
-import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 import org.jspecify.annotations.Nullable;
 
-import java.util.List;
-
 /**
- * Refinery Block Entity - processes crude oil into petrol.
- * Uses the modern NeoForge Transfer API (ResourceHandler) for pipe/automation support.
+ * Refinery Block Entity - final two-stage reformate -> petrol processing.
+ * Shares fluid/energy capability handling with other FE processors.
  */
-public class RefineryBlockEntity extends BlockEntity implements MenuProvider,
+public class RefineryBlockEntity extends AbstractPoweredFluidProcessorBlockEntity implements MenuProvider,
         HasInputFluidTank, HasOutputFluidTank, HasProcessingProgress {
 
     public static final int INPUT_CAPACITY = 8000;
     public static final int OUTPUT_CAPACITY = 8000;
-    public static final int PROCESS_TIME = 200;
     public static final int PROCESS_AMOUNT = 1000;
+    public static final int DISTILLATION_TIME = 120;
+    public static final int REFORMING_TIME = 100;
+    public static final int PROCESS_TIME = DISTILLATION_TIME + REFORMING_TIME;
+    public static final int PROCESS_RATE = 3;
+    public static final int FE_PER_TICK = 16;
+    public static final int ENERGY_CAPACITY = 50000;
+    public static final int MAX_FE_INPUT = 2500;
 
-    private int inputAmount = 0;
-    private int outputAmount = 0;
-    private int processProgress = 0;
-
-    private final InputTankHandler inputHandler = new InputTankHandler();
-    private final OutputTankHandler outputHandler = new OutputTankHandler();
-    private final ResourceHandler<FluidResource> combinedHandler = new CombinedResourceHandler<>(List.of(inputHandler, outputHandler));
+    private RefiningStage refiningStage = RefiningStage.IDLE;
+    private int stageProgress = 0;
+    private int batchAmount = 0;
 
     private final ContainerData data = new ContainerData() {
         @Override
         public int get(int index) {
             return switch (index) {
-                case 0 -> inputAmount;
-                case 1 -> INPUT_CAPACITY;
-                case 2 -> outputAmount;
-                case 3 -> OUTPUT_CAPACITY;
-                case 4 -> processProgress;
+                case 0 -> getInputAmount();
+                case 1 -> getInputCapacity();
+                case 2 -> getOutputAmount();
+                case 3 -> getOutputCapacity();
+                case 4 -> getProcessProgress();
+                case 5 -> refiningStage.id;
+                case 6 -> getEnergyStored();
+                case 7 -> getEnergyCapacity();
                 default -> 0;
             };
         }
+
         @Override
         public void set(int index, int value) {}
+
         @Override
-        public int getCount() { return 5; }
+        public int getCount() {
+            return 8;
+        }
     };
 
     public RefineryBlockEntity(BlockPos pos, BlockState state) {
-        super(ModBlockEntities.REFINERY.get(), pos, state);
+        super(
+                ModBlockEntities.REFINERY.get(),
+                pos,
+                state,
+                ModFluids.REFORMATE_SOURCE,
+                ModFluids.REFORMATE_FLOWING,
+                ModFluids.PETROL_SOURCE,
+                ModFluids.PETROL_FLOWING,
+                INPUT_CAPACITY,
+                OUTPUT_CAPACITY,
+                PROCESS_AMOUNT,
+                PROCESS_TIME,
+                PROCESS_RATE,
+                FE_PER_TICK,
+                ENERGY_CAPACITY,
+                MAX_FE_INPUT
+        );
     }
 
     @Override
@@ -83,141 +98,170 @@ public class RefineryBlockEntity extends BlockEntity implements MenuProvider,
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, RefineryBlockEntity refinery) {
-        refinery.tick();
+        refinery.tickServer();
     }
 
-    private void tick() {
+    @Override
+    public void tickServer() {
         if (level == null || level.isClientSide()) return;
-        boolean canProcess = inputAmount >= PROCESS_AMOUNT && (OUTPUT_CAPACITY - outputAmount) >= PROCESS_AMOUNT;
-        if (canProcess) {
-            processProgress++;
-            if (processProgress >= PROCESS_TIME) {
-                inputAmount -= PROCESS_AMOUNT;
-                outputAmount += PROCESS_AMOUNT;
-                processProgress = 0;
+        switch (refiningStage) {
+            case IDLE -> tryStartDistillation();
+            case DISTILLATION -> runDistillation();
+            case REFORMING -> runReforming();
+        }
+    }
+
+    private void tryStartDistillation() {
+        int outputSpace = getOutputCapacity() - getOutputAmount();
+        int availableInput = getInputAmount();
+        if (availableInput <= 0 || outputSpace <= 0) return;
+
+        batchAmount = Math.min(PROCESS_AMOUNT, Math.min(availableInput, outputSpace));
+        refiningStage = RefiningStage.DISTILLATION;
+        stageProgress = 0;
+        setChanged();
+    }
+
+    private void runDistillation() {
+        if (batchAmount <= 0) {
+            refiningStage = RefiningStage.IDLE;
+            stageProgress = 0;
+            return;
+        }
+        if (!consumeEnergy(getEffectiveFePerTick())) return;
+        int step = Math.min(getEffectiveProcessRate(), batchAmount - stageProgress);
+        int consumed = drainInput(step, true);
+        if (consumed <= 0) return;
+
+        stageProgress += consumed;
+        if (stageProgress >= batchAmount || getInputAmount() <= 0) {
+            // If input ran out early, continue with whatever was distilled so far.
+            batchAmount = stageProgress;
+            refiningStage = RefiningStage.REFORMING;
+            stageProgress = 0;
+        }
+        setChanged();
+    }
+
+    private void runReforming() {
+        if (batchAmount <= 0) {
+            refiningStage = RefiningStage.IDLE;
+            stageProgress = 0;
+            return;
+        }
+        if (!consumeEnergy(getEffectiveFePerTick())) return;
+        int step = Math.min(getEffectiveProcessRate(), batchAmount - stageProgress);
+        int produced = addOutputAmount(step);
+        stageProgress += produced;
+        if (stageProgress >= batchAmount) {
+            refiningStage = RefiningStage.IDLE;
+            stageProgress = 0;
+            batchAmount = 0;
+        }
+        setChanged();
+    }
+
+    @Override
+    public int getProcessProgress() {
+        if (batchAmount <= 0) return 0;
+        return switch (refiningStage) {
+            case IDLE -> 0;
+            case DISTILLATION -> Math.min(DISTILLATION_TIME, (int) ((long) stageProgress * DISTILLATION_TIME / batchAmount));
+            case REFORMING -> Math.min(PROCESS_TIME,
+                    DISTILLATION_TIME + (int) ((long) stageProgress * REFORMING_TIME / batchAmount));
+        };
+    }
+
+    private enum RefiningStage {
+        IDLE(0),
+        DISTILLATION(1),
+        REFORMING(2);
+
+        private final int id;
+
+        RefiningStage(int id) {
+            this.id = id;
+        }
+
+        private static RefiningStage fromId(int id) {
+            for (RefiningStage stage : values()) {
+                if (stage.id == id) return stage;
             }
-            setChanged();
-        } else if (processProgress > 0) {
-            processProgress = 0;
-            setChanged();
+            return IDLE;
         }
     }
 
-    @Override
-    public int fillInput(Fluid fluid, int amount, boolean execute) {
-        if (fluid != ModFluids.CRUDE_OIL_SOURCE.get()) return 0;
-        int space = INPUT_CAPACITY - inputAmount;
-        int toFill = Math.min(amount, space);
-        if (execute && toFill > 0) {
-            inputAmount += toFill;
-            setChanged();
-        }
-        return toFill;
+    /** Clears the input tank (used by GUI "flush" action). */
+    public void clearInputFluid() {
+        drainInput(getInputAmount(), true);
+    }
+
+    /** Clears the output tank (used by GUI "flush" action). */
+    public void clearOutputFluid() {
+        drainOutput(getOutputAmount(), true);
     }
 
     @Override
-    public int drainInput(int amount, boolean execute) {
-        int toDrain = Math.min(amount, inputAmount);
-        if (execute && toDrain > 0) {
-            inputAmount -= toDrain;
-            setChanged();
-        }
-        return toDrain;
+    public boolean hasInputFluid() {
+        return getInputAmount() > 0;
     }
 
     @Override
-    public int drainOutput(int amount, boolean execute) {
-        int toDrain = Math.min(amount, outputAmount);
-        if (execute && toDrain > 0) {
-            outputAmount -= toDrain;
-            setChanged();
-        }
-        return toDrain;
+    public boolean hasOutputFluid() {
+        return getOutputAmount() > 0;
     }
-
-    @Override
-    public boolean hasInputFluid() { return inputAmount > 0; }
-    @Override
-    public boolean hasOutputFluid() { return outputAmount > 0; }
-    @Override
-    public int getInputAmount() { return inputAmount; }
-    @Override
-    public int getInputCapacity() { return INPUT_CAPACITY; }
-    @Override
-    public int getOutputAmount() { return outputAmount; }
-    @Override
-    public int getOutputCapacity() { return OUTPUT_CAPACITY; }
-    @Override
-    public int getProcessProgress() { return processProgress; }
-    @Override
-    public int getProcessTime() { return PROCESS_TIME; }
 
     @Override
     protected void saveAdditional(ValueOutput output) {
         super.saveAdditional(output);
-        output.putInt("InputAmount", inputAmount);
-        output.putInt("OutputAmount", outputAmount);
-        output.putInt("ProcessProgress", processProgress);
+        output.putInt("RefiningStage", refiningStage.id);
+        output.putInt("StageProgress", stageProgress);
+        output.putInt("BatchAmount", batchAmount);
+        // Keep single-progress key for backward compatibility with older saves/readers.
+        output.putInt("ProcessProgress", getProcessProgress());
     }
 
     @Override
     protected void loadAdditional(ValueInput input) {
         super.loadAdditional(input);
-        inputAmount = input.getIntOr("InputAmount", 0);
-        outputAmount = input.getIntOr("OutputAmount", 0);
-        processProgress = input.getIntOr("ProcessProgress", 0);
-    }
-
-    public ResourceHandler<FluidResource> getFluidHandler(@Nullable Direction side) {
-        if (side == Direction.DOWN) return outputHandler;
-        if (side == null) return combinedHandler;
-        return inputHandler;
-    }
-
-    private class InputTankHandler extends SnapshotJournal<Integer> implements ResourceHandler<FluidResource> {
-        private final FluidResource crudeOilResource = FluidResource.of(ModFluids.CRUDE_OIL_SOURCE.get());
-        @Override public int size() { return 1; }
-        @Override public FluidResource getResource(int index) { return index == 0 && inputAmount > 0 ? crudeOilResource : FluidResource.EMPTY; }
-        @Override public long getAmountAsLong(int index) { return index == 0 ? inputAmount : 0; }
-        @Override public long getCapacityAsLong(int index, FluidResource resource) { return index == 0 && (resource.isEmpty() || resource.equals(crudeOilResource)) ? INPUT_CAPACITY : 0; }
-        @Override public boolean isValid(int index, FluidResource resource) { return index == 0 && resource.equals(crudeOilResource); }
-        @Override
-        public int insert(int index, FluidResource resource, int amount, TransactionContext transaction) {
-            if (index != 0 || !resource.equals(crudeOilResource) || amount <= 0) return 0;
-            int space = INPUT_CAPACITY - inputAmount;
-            int toInsert = Math.min(amount, space);
-            if (toInsert > 0) { updateSnapshots(transaction); inputAmount += toInsert; }
-            return toInsert;
+        int stageId = input.getIntOr("RefiningStage", -1);
+        if (stageId >= 0) {
+            refiningStage = RefiningStage.fromId(stageId);
+            stageProgress = input.getIntOr("StageProgress", 0);
+            batchAmount = input.getIntOr("BatchAmount", 0);
+            if (refiningStage != RefiningStage.IDLE && batchAmount <= 0) {
+                // Migration path for saves from before batch amount existed.
+                batchAmount = PROCESS_AMOUNT;
+                if (refiningStage == RefiningStage.DISTILLATION) {
+                    int oldStageTicks = Math.min(stageProgress, DISTILLATION_TIME);
+                    stageProgress = (int) ((long) oldStageTicks * batchAmount / DISTILLATION_TIME);
+                } else if (refiningStage == RefiningStage.REFORMING) {
+                    int oldStageTicks = Math.min(stageProgress, REFORMING_TIME);
+                    stageProgress = (int) ((long) oldStageTicks * batchAmount / REFORMING_TIME);
+                }
+            }
+            if (refiningStage == RefiningStage.IDLE) {
+                stageProgress = 0;
+                batchAmount = 0;
+            }
+            return;
         }
-        @Override
-        public int extract(int index, FluidResource resource, int amount, TransactionContext transaction) {
-            if (index != 0 || !resource.equals(crudeOilResource) || inputAmount <= 0 || amount <= 0) return 0;
-            int toExtract = Math.min(amount, inputAmount);
-            if (toExtract > 0) { updateSnapshots(transaction); inputAmount -= toExtract; }
-            return toExtract;
-        }
-        @Override protected Integer createSnapshot() { return inputAmount; }
-        @Override protected void revertToSnapshot(Integer snapshot) { inputAmount = snapshot; }
-        @Override protected void onRootCommit(Integer originalState) { setChanged(); }
-    }
 
-    private class OutputTankHandler extends SnapshotJournal<Integer> implements ResourceHandler<FluidResource> {
-        private final FluidResource petrolResource = FluidResource.of(ModFluids.PETROL_SOURCE.get());
-        @Override public int size() { return 1; }
-        @Override public FluidResource getResource(int index) { return index == 0 && outputAmount > 0 ? petrolResource : FluidResource.EMPTY; }
-        @Override public long getAmountAsLong(int index) { return index == 0 ? outputAmount : 0; }
-        @Override public long getCapacityAsLong(int index, FluidResource resource) { return index == 0 && (resource.isEmpty() || resource.equals(petrolResource)) ? OUTPUT_CAPACITY : 0; }
-        @Override public boolean isValid(int index, FluidResource resource) { return false; }
-        @Override public int insert(int index, FluidResource resource, int amount, TransactionContext transaction) { return 0; }
-        @Override
-        public int extract(int index, FluidResource resource, int amount, TransactionContext transaction) {
-            if (index != 0 || !resource.equals(petrolResource) || outputAmount <= 0 || amount <= 0) return 0;
-            int toExtract = Math.min(amount, outputAmount);
-            if (toExtract > 0) { updateSnapshots(transaction); outputAmount -= toExtract; }
-            return toExtract;
+        // Migration path for older saves with a single progress value.
+        int oldProgress = input.getIntOr("ProcessProgress", 0);
+        if (oldProgress <= 0) {
+            refiningStage = RefiningStage.IDLE;
+            stageProgress = 0;
+            batchAmount = 0;
+        } else if (oldProgress < DISTILLATION_TIME) {
+            refiningStage = RefiningStage.DISTILLATION;
+            batchAmount = PROCESS_AMOUNT;
+            stageProgress = (int) ((long) oldProgress * batchAmount / DISTILLATION_TIME);
+        } else {
+            refiningStage = RefiningStage.REFORMING;
+            batchAmount = PROCESS_AMOUNT;
+            int reformingProgress = Math.min(oldProgress - DISTILLATION_TIME, REFORMING_TIME);
+            stageProgress = (int) ((long) reformingProgress * batchAmount / REFORMING_TIME);
         }
-        @Override protected Integer createSnapshot() { return outputAmount; }
-        @Override protected void revertToSnapshot(Integer snapshot) { outputAmount = snapshot; }
-        @Override protected void onRootCommit(Integer originalState) { setChanged(); }
     }
 }

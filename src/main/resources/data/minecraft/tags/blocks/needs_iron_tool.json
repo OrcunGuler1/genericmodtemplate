@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "common_transports:refinery",
+    "common_transports:distillation_tower",
+    "common_transports:catalytic_reformer",
+    "common_transports:creative_energy_cell",
+    "common_transports:basic_fluid_pipe"
+  ]
+}

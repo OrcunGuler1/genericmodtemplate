@@ -7,7 +7,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.LiquidBlock;
-import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluid;
 import net.neoforged.bus.api.IEventBus;
@@ -49,7 +48,7 @@ public class ModFluids {
     
     public static final DeferredBlock<LiquidBlock> CRUDE_OIL_BLOCK = BLOCKS.registerBlock("crude_oil",
         props -> new LiquidBlock(CRUDE_OIL_SOURCE.get(), props),
-        BlockBehaviour.Properties.of()
+        props -> props
             .replaceable()
             .noCollision()
             .strength(100.0F)
@@ -67,7 +66,77 @@ public class ModFluids {
         .block(CRUDE_OIL_BLOCK)
         .bucket(CRUDE_OIL_BUCKET);
 
-    // ==================== PETROL (Refined Fuel - no bucket, only stored in machines/gas cans) ====================
+    // ==================== NAPHTHA (Intermediate feedstock from distillation) ====================
+    public static final DeferredHolder<FluidType, FluidType> NAPHTHA_TYPE = FLUID_TYPES.register("naphtha",
+        () -> new FluidType(FluidType.Properties.create()
+            .density(780)
+            .viscosity(1000)
+            .canSwim(false)
+            .canDrown(true)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY)));
+
+    public static final DeferredHolder<Fluid, FlowingFluid> NAPHTHA_SOURCE = FLUIDS.register("naphtha",
+        () -> new BaseFlowingFluid.Source(ModFluids.NAPHTHA_PROPERTIES));
+
+    public static final DeferredHolder<Fluid, FlowingFluid> NAPHTHA_FLOWING = FLUIDS.register("naphtha_flowing",
+        () -> new BaseFlowingFluid.Flowing(ModFluids.NAPHTHA_PROPERTIES));
+
+    public static final DeferredBlock<LiquidBlock> NAPHTHA_BLOCK = BLOCKS.registerBlock("naphtha",
+        props -> new LiquidBlock(NAPHTHA_SOURCE.get(), props),
+        props -> props
+            .replaceable()
+            .noCollision()
+            .strength(100.0F)
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+            .liquid());
+
+    public static final DeferredItem<BucketItem> NAPHTHA_BUCKET = ITEMS.registerItem("naphtha_bucket",
+        props -> new BucketItem(NAPHTHA_SOURCE.get(), props.craftRemainder(Items.BUCKET).stacksTo(1)));
+
+    public static final BaseFlowingFluid.Properties NAPHTHA_PROPERTIES = new BaseFlowingFluid.Properties(
+        NAPHTHA_TYPE, NAPHTHA_SOURCE, NAPHTHA_FLOWING)
+        .slopeFindDistance(3)
+        .levelDecreasePerBlock(1)
+        .block(NAPHTHA_BLOCK)
+        .bucket(NAPHTHA_BUCKET);
+
+    // ==================== REFORMATE (Intermediate from catalytic reforming) ====================
+    public static final DeferredHolder<FluidType, FluidType> REFORMATE_TYPE = FLUID_TYPES.register("reformate",
+        () -> new FluidType(FluidType.Properties.create()
+            .density(760)
+            .viscosity(900)
+            .canSwim(false)
+            .canDrown(true)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY)));
+
+    public static final DeferredHolder<Fluid, FlowingFluid> REFORMATE_SOURCE = FLUIDS.register("reformate",
+        () -> new BaseFlowingFluid.Source(ModFluids.REFORMATE_PROPERTIES));
+
+    public static final DeferredHolder<Fluid, FlowingFluid> REFORMATE_FLOWING = FLUIDS.register("reformate_flowing",
+        () -> new BaseFlowingFluid.Flowing(ModFluids.REFORMATE_PROPERTIES));
+
+    public static final DeferredBlock<LiquidBlock> REFORMATE_BLOCK = BLOCKS.registerBlock("reformate",
+        props -> new LiquidBlock(REFORMATE_SOURCE.get(), props),
+        props -> props
+            .replaceable()
+            .noCollision()
+            .strength(100.0F)
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+            .liquid());
+
+    public static final DeferredItem<BucketItem> REFORMATE_BUCKET = ITEMS.registerItem("reformate_bucket",
+        props -> new BucketItem(REFORMATE_SOURCE.get(), props.craftRemainder(Items.BUCKET).stacksTo(1)));
+
+    public static final BaseFlowingFluid.Properties REFORMATE_PROPERTIES = new BaseFlowingFluid.Properties(
+        REFORMATE_TYPE, REFORMATE_SOURCE, REFORMATE_FLOWING)
+        .slopeFindDistance(3)
+        .levelDecreasePerBlock(1)
+        .block(REFORMATE_BLOCK)
+        .bucket(REFORMATE_BUCKET);
+
+    // ==================== PETROL (Final fuel, no bucket) ====================
     public static final DeferredHolder<FluidType, FluidType> PETROL_TYPE = FLUID_TYPES.register("petrol",
         () -> new FluidType(FluidType.Properties.create()
             .density(750)
@@ -86,7 +155,7 @@ public class ModFluids {
     // Petrol block exists for internal use but no bucket - petrol can only be extracted via gas can
     public static final DeferredBlock<LiquidBlock> PETROL_BLOCK = BLOCKS.registerBlock("petrol",
         props -> new LiquidBlock(PETROL_SOURCE.get(), props),
-        BlockBehaviour.Properties.of()
+        props -> props
             .replaceable()
             .noCollision()
             .strength(100.0F)

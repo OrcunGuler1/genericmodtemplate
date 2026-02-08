@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "common_transports:block/basic_fluid_pipe"
+    }
+  }
+}

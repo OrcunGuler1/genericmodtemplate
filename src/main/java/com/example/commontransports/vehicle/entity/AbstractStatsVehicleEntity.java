@@ -18,20 +18,21 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.Input;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Abstract base for vehicles driven by {@link VehicleStats}. Handles movement, fuel,
- * durability, inventory, passengers, and interaction. Subclasses provide stats, drop item,
+ * durability, passengers, and interaction. Subclasses provide stats, drop item,
  * and fuel/durability data accessors.
  */
 public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
@@ -39,17 +40,15 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
 
     protected static final double MODEL_Y_OFFSET = 0.5;
 
-    protected SimpleContainer inventory;
     protected float currentSpeed = 0.0f;
     protected float currentLean = 0.0f;
     protected float wheelRotation = 0.0f;
     protected float fuelAccumulator = 0.0f;
     protected boolean hadRiderLastTick = false;
 
-    protected AbstractStatsVehicleEntity(EntityType<? extends BaseVehicleEntity> type, Level level, int inventorySize) {
+    protected AbstractStatsVehicleEntity(EntityType<? extends BaseVehicleEntity> type, Level level) {
         super(type, level);
         this.blocksBuilding = true;
-        this.inventory = new SimpleContainer(inventorySize);
     }
 
     @Override
@@ -87,10 +86,6 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
                 setDeltaMovement(Vec3.ZERO);
             }
             handleRiderInput(rider);
-
-            if (!level().isClientSide() && rider instanceof ServerPlayer serverPlayer && tickCount % 20 == 0) {
-                displayFuelLevel(serverPlayer);
-            }
         } else {
             currentSpeed = approach(currentSpeed, 0.0f, stats.deceleration);
             currentLean = approach(currentLean, 0.0f, stats.leanSpeed);
@@ -118,25 +113,6 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
         setDeltaMovement(getDeltaMovement().scale(stats.movementFriction));
         updateWheelRotation();
         hadRiderLastTick = (rider != null);
-    }
-
-    protected void displayFuelLevel(ServerPlayer player) {
-        VehicleStats stats = getStats();
-        int fuel = getFuel();
-        int fuelPercent = (int) ((float) fuel / stats.maxFuel * 100);
-        String fuelBar = createFuelBar(fuelPercent);
-        Component message = Component.literal("Fuel: " + fuelBar + " " + fuelPercent + "%");
-        player.displayClientMessage(message, true);
-    }
-
-    protected String createFuelBar(int percent) {
-        int filled = percent / 10;
-        int empty = 10 - filled;
-        StringBuilder bar = new StringBuilder("[");
-        for (int i = 0; i < filled; i++) bar.append("█");
-        for (int i = 0; i < empty; i++) bar.append("░");
-        bar.append("]");
-        return bar.toString();
     }
 
     protected void handleRiderInput(LivingEntity rider) {
@@ -252,10 +228,45 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
     public boolean canBeCollidedWith(@Nullable Entity entity) { return true; }
 
     @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (level().isClientSide() || isRemoved()) return true;
+        if (isInvulnerable()) return false;
+        return applyDamage(source, amount);
+    }
+
+    protected boolean applyDamage(DamageSource source, float amount) {
+        int damage = Math.max(1, Mth.ceil(amount));
+        setHurtDir(-getHurtDir());
+        setHurtTime(10);
+        markHurt();
+        setDurability(getDurability() - damage);
+        if (getDurability() <= 0) {
+            discard();
+            dropStack(createDropStack());
+        }
+        return true;
+    }
+
+    /**
+     * Creates the item stack to drop, saving current fuel.
+     */
+    protected ItemStack createDropStack() {
+        ItemStack stack = new ItemStack(getDropItem());
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("Fuel", getFuel());
+        tag.putInt("MaxFuel", getStats().maxFuel);
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        return stack;
+    }
+
+    @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
         ItemStack held = player.getItemInHand(hand);
-        if (player.isSecondaryUseActive()) return handleInventoryInteract(player, hand);
-        if (isFuelItem(held)) return handleFueling(player, held);
+        if (player.isSecondaryUseActive()) return InteractionResult.PASS;
+        if (isFuelItem(held)) {
+            if (level().isClientSide()) return InteractionResult.SUCCESS;
+            return handleFueling(player, held);
+        }
         if (!player.isPassenger()) {
             if (level().isClientSide()) return InteractionResult.SUCCESS;
             return player.startRiding(this) ? InteractionResult.SUCCESS_SERVER : InteractionResult.PASS;
@@ -268,90 +279,10 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
         return InteractionResult.PASS;
     }
 
-    protected InteractionResult handleInventoryInteract(Player player, InteractionHand hand) {
-        ItemStack held = player.getItemInHand(hand);
-        if (held.isEmpty()) {
-            ItemStack extracted = extractOneItem();
-            if (!extracted.isEmpty()) {
-                player.addItem(extracted);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
-        ItemStack remainder = addToInventory(held);
-        if (remainder.getCount() != held.getCount()) {
-            player.setItemInHand(hand, remainder);
-            return InteractionResult.SUCCESS;
-        }
-        return InteractionResult.PASS;
-    }
-
-    protected ItemStack addToInventory(ItemStack stack) {
-        ItemStack remaining = stack.copy();
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack slot = inventory.getItem(i);
-            if (slot.isEmpty()) {
-                inventory.setItem(i, remaining.split(remaining.getCount()));
-                return remaining;
-            }
-            if (ItemStack.isSameItemSameComponents(slot, remaining) && slot.getCount() < slot.getMaxStackSize()) {
-                int transfer = Math.min(remaining.getCount(), slot.getMaxStackSize() - slot.getCount());
-                if (transfer > 0) {
-                    slot.grow(transfer);
-                    remaining.shrink(transfer);
-                }
-                if (remaining.isEmpty()) return remaining;
-            }
-        }
-        return remaining;
-    }
-
-    protected ItemStack extractOneItem() {
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack slot = inventory.getItem(i);
-            if (!slot.isEmpty()) {
-                ItemStack extracted = slot.split(1);
-                if (slot.isEmpty()) inventory.setItem(i, ItemStack.EMPTY);
-                return extracted;
-            }
-        }
-        return ItemStack.EMPTY;
-    }
-
-    @Override
-    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
-        if (isRemoved()) return false;
-        int damage = Math.max(1, Mth.ceil(amount));
-        setDurability(getDurability() - damage);
-        if (getDurability() <= 0) {
-            discard();
-            dropStack(new ItemStack(getDropItem()));
-        }
-        return true;
-    }
-
-    @Override
-    public void remove(RemovalReason reason) {
-        if (!level().isClientSide()) dropInventory();
-        super.remove(reason);
-    }
-
-    protected void dropInventory() {
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
-            if (!stack.isEmpty()) dropStack(stack);
-        }
-    }
-
     @Override
     protected void addAdditionalSaveData(ValueOutput output) {
         output.putInt("Fuel", getFuel());
         output.putInt("Durability", getDurability());
-        ValueOutput.TypedOutputList<ItemStack> list = output.list("Inventory", ItemStack.CODEC);
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
-            if (!stack.isEmpty()) list.add(stack);
-        }
     }
 
     @Override
@@ -359,13 +290,6 @@ public abstract class AbstractStatsVehicleEntity extends BaseVehicleEntity
         VehicleStats stats = getStats();
         setFuel(input.getIntOr("Fuel", 0));
         setDurability(input.getIntOr("Durability", stats.maxDurability));
-        for (int i = 0; i < inventory.getContainerSize(); i++) inventory.setItem(i, ItemStack.EMPTY);
-        int index = 0;
-        for (ItemStack stack : input.listOrEmpty("Inventory", ItemStack.CODEC)) {
-            if (index >= inventory.getContainerSize()) break;
-            inventory.setItem(index, stack);
-            index++;
-        }
     }
 
     protected void dropStack(ItemStack stack) {

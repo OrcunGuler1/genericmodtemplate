@@ -7,8 +7,10 @@ import com.example.commontransports.api.item.FluidContainerItem;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -25,7 +27,7 @@ public class MotorcycleEntity extends AbstractStatsVehicleEntity {
     private static final EntityDataAccessor<Integer> DURABILITY = SynchedEntityData.defineId(MotorcycleEntity.class, EntityDataSerializers.INT);
 
     public MotorcycleEntity(EntityType<? extends MotorcycleEntity> type, Level level) {
-        super(type, level, VehicleStats.MOTORCYCLE.inventorySize);
+        super(type, level);
     }
 
     @Override
@@ -54,7 +56,7 @@ public class MotorcycleEntity extends AbstractStatsVehicleEntity {
     public int getFuel() { return entityData.get(FUEL); }
 
     @Override
-    public void setFuel(int value) { entityData.set(FUEL, Math.max(0, value)); }
+    public void setFuel(int value) { entityData.set(FUEL, Mth.clamp(value, 0, getStats().maxFuel)); }
 
     @Override
     public int getDurability() { return entityData.get(DURABILITY); }
@@ -62,6 +64,14 @@ public class MotorcycleEntity extends AbstractStatsVehicleEntity {
     @Override
     public void setDurability(int value) {
         entityData.set(DURABILITY, Mth.clamp(value, 0, getStats().maxDurability));
+    }
+
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (level.isClientSide() || isRemoved()) return true;
+        if (isInvulnerable()) return false;
+        float scaled = amount * (getStats().maxDurability / 3.0f);
+        return applyDamage(source, scaled);
     }
 
     @Override
