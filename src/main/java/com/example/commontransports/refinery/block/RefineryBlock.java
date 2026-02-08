@@ -4,6 +4,7 @@ import com.example.commontransports.GenericMod;
 import com.example.commontransports.api.item.FluidContainerItem;
 import com.example.commontransports.block.entity.ModBlockEntities;
 import com.example.commontransports.fluid.ModFluids;
+import com.example.commontransports.processing.block.UpgradeInstallUtil;
 import com.example.commontransports.refinery.entity.RefineryBlockEntity;
 
 import com.mojang.serialization.MapCodec;
@@ -55,20 +56,12 @@ public class RefineryBlock extends BaseEntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof RefineryBlockEntity refinery)) return InteractionResult.PASS;
 
-        if (stack.is(GenericMod.SPEED_UPGRADE.get())) {
-            if (refinery.installSpeedUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
-        if (stack.is(GenericMod.EFFICIENCY_UPGRADE.get())) {
-            if (refinery.installEfficiencyUpgrade()) {
-                if (!player.getAbilities().instabuild) stack.shrink(1);
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
-        }
+        InteractionResult upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.SPEED_UPGRADE.get(), refinery.getMaxUpgradesPerType(), refinery::installSpeedUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
+        upgradeResult = UpgradeInstallUtil.tryInstallHeldUpgrade(
+                player, stack, GenericMod.EFFICIENCY_UPGRADE.get(), refinery.getMaxUpgradesPerType(), refinery::installEfficiencyUpgrades);
+        if (upgradeResult != InteractionResult.PASS) return upgradeResult;
 
         // Generic fluid-container compatibility via NeoForge fluid item capability.
         if (net.neoforged.neoforge.transfer.fluid.FluidUtil.interactWithFluidHandler(

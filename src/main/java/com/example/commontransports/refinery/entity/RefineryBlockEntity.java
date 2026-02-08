@@ -54,6 +54,17 @@ public class RefineryBlockEntity extends AbstractPoweredFluidProcessorBlockEntit
                 case 5 -> refiningStage.id;
                 case 6 -> getEnergyStored();
                 case 7 -> getEnergyCapacity();
+                case 8 -> getSpeedUpgrades();
+                case 9 -> getEfficiencyUpgrades();
+                case 10 -> getMaxUpgradesPerType();
+                case 11 -> getEffectiveProcessRate();
+                case 12 -> getEffectiveFePerTick();
+                case 13 -> getSideMode(net.minecraft.core.Direction.DOWN).id();
+                case 14 -> getSideMode(net.minecraft.core.Direction.UP).id();
+                case 15 -> getSideMode(net.minecraft.core.Direction.NORTH).id();
+                case 16 -> getSideMode(net.minecraft.core.Direction.SOUTH).id();
+                case 17 -> getSideMode(net.minecraft.core.Direction.WEST).id();
+                case 18 -> getSideMode(net.minecraft.core.Direction.EAST).id();
                 default -> 0;
             };
         }
@@ -63,7 +74,7 @@ public class RefineryBlockEntity extends AbstractPoweredFluidProcessorBlockEntit
 
         @Override
         public int getCount() {
-            return 8;
+            return 19;
         }
     };
 

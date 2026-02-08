@@ -1,5 +1,6 @@
 package com.example.commontransports.network;
 
+import com.example.commontransports.GenericMod;
 import com.example.commontransports.api.item.FluidContainerItem;
 import com.example.commontransports.api.menu.ProcessingMenu;
 import com.example.commontransports.processing.entity.AbstractPoweredFluidProcessorBlockEntity;
@@ -31,11 +32,31 @@ public final class ProcessingPayloadHandler {
 
             BlockEntity be = player.level().getBlockEntity(pos);
             if (!(be instanceof AbstractPoweredFluidProcessorBlockEntity processor)) return;
-            if (payload.actionId() != ProcessingActionPayload.ACTION_PICKUP_OUTPUT) return;
 
-            if (tryTransferOutputToHeldContainer(player, InteractionHand.MAIN_HAND, pos, processor)) return;
-            tryTransferOutputToHeldContainer(player, InteractionHand.OFF_HAND, pos, processor);
+            int actionId = payload.actionId();
+            if (actionId == ProcessingActionPayload.ACTION_PICKUP_OUTPUT) {
+                if (tryTransferOutputToHeldContainer(player, InteractionHand.MAIN_HAND, pos, processor)) return;
+                tryTransferOutputToHeldContainer(player, InteractionHand.OFF_HAND, pos, processor);
+                return;
+            }
+            if (actionId == ProcessingActionPayload.ACTION_EJECT_SPEED_UPGRADE) {
+                if (processor.uninstallSpeedUpgrade()) {
+                    giveUpgradeToPlayer(player, new ItemStack(GenericMod.SPEED_UPGRADE.get()));
+                }
+                return;
+            }
+            if (actionId == ProcessingActionPayload.ACTION_EJECT_EFFICIENCY_UPGRADE) {
+                if (processor.uninstallEfficiencyUpgrade()) {
+                    giveUpgradeToPlayer(player, new ItemStack(GenericMod.EFFICIENCY_UPGRADE.get()));
+                }
+            }
         });
+    }
+
+    private static void giveUpgradeToPlayer(net.minecraft.world.entity.player.Player player, ItemStack stack) {
+        if (!player.addItem(stack)) {
+            player.drop(stack, false);
+        }
     }
 
     private static boolean tryTransferOutputToHeldContainer(

@@ -29,6 +29,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 
 import com.example.commontransports.client.gui.VehicleFuelHudOverlay;
+import com.example.commontransports.client.screen.BasicFluidPipeScreen;
 import com.example.commontransports.client.screen.CatalyticReformerScreen;
 import com.example.commontransports.client.screen.DistillationTowerScreen;
 import com.example.commontransports.client.screen.RefineryScreen;
@@ -95,6 +96,7 @@ public class GenericModClient {
         event.register(ModMenuTypes.REFINERY.get(), RefineryScreen::new);
         event.register(ModMenuTypes.DISTILLATION_TOWER.get(), DistillationTowerScreen::new);
         event.register(ModMenuTypes.CATALYTIC_REFORMER.get(), CatalyticReformerScreen::new);
+        event.register(ModMenuTypes.BASIC_FLUID_PIPE.get(), BasicFluidPipeScreen::new);
     }
 
     @SubscribeEvent

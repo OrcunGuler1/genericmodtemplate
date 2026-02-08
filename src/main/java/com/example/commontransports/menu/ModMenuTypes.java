@@ -1,6 +1,7 @@
 package com.example.commontransports.menu;
 
 import com.example.commontransports.GenericMod;
+import com.example.commontransports.pipe.menu.BasicFluidPipeMenu;
 import com.example.commontransports.processing.menu.CatalyticReformerMenu;
 import com.example.commontransports.processing.menu.DistillationTowerMenu;
 import com.example.commontransports.refinery.menu.RefineryMenu;
@@ -23,6 +24,8 @@ public class ModMenuTypes {
         MENUS.register("distillation_tower", () -> IMenuTypeExtension.create(DistillationTowerMenu::new));
     public static final DeferredHolder<MenuType<?>, MenuType<CatalyticReformerMenu>> CATALYTIC_REFORMER =
         MENUS.register("catalytic_reformer", () -> IMenuTypeExtension.create(CatalyticReformerMenu::new));
+    public static final DeferredHolder<MenuType<?>, MenuType<BasicFluidPipeMenu>> BASIC_FLUID_PIPE =
+        MENUS.register("basic_fluid_pipe", () -> IMenuTypeExtension.create(BasicFluidPipeMenu::new));
     
     public static void register(IEventBus modEventBus) {
         MENUS.register(modEventBus);

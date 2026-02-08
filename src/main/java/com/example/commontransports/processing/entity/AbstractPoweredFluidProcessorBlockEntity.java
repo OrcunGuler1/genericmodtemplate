@@ -1,5 +1,6 @@
 package com.example.commontransports.processing.entity;
 
+import com.example.commontransports.Config;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -18,6 +19,7 @@ import net.neoforged.neoforge.transfer.transaction.Transaction;
 import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -25,9 +27,50 @@ import java.util.function.Supplier;
  * Shared implementation for FE-powered fluid processors with one input and one output tank.
  */
 public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEntity {
+    public enum SideMode {
+        DISABLED(0, false, false),
+        PULL(1, true, false),
+        PUSH(2, false, true),
+        BOTH(3, true, true);
 
-    public static final int MAX_SPEED_UPGRADES = 8;
-    public static final int MAX_EFFICIENCY_UPGRADES = 8;
+        private final int id;
+        private final boolean allowsPull;
+        private final boolean allowsPush;
+
+        SideMode(int id, boolean allowsPull, boolean allowsPush) {
+            this.id = id;
+            this.allowsPull = allowsPull;
+            this.allowsPush = allowsPush;
+        }
+
+        public int id() {
+            return id;
+        }
+
+        public boolean allowsPull() {
+            return allowsPull;
+        }
+
+        public boolean allowsPush() {
+            return allowsPush;
+        }
+
+        public SideMode next() {
+            return values()[(ordinal() + 1) % values().length];
+        }
+
+        public SideMode previous() {
+            return values()[(ordinal() - 1 + values().length) % values().length];
+        }
+
+        public static SideMode fromId(int id) {
+            for (SideMode mode : values()) {
+                if (mode.id == id) return mode;
+            }
+            return BOTH;
+        }
+    }
+
 
     private final Supplier<? extends Fluid> inputSourceSupplier;
     private final Supplier<? extends Fluid> inputFlowingSupplier;
@@ -48,6 +91,7 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
     private int processProgress = 0;
     private int speedUpgrades = 0;
     private int efficiencyUpgrades = 0;
+    private final SideMode[] sideModes = createDefaultSideModes();
 
     private final SimpleEnergyHandler energyHandler;
     private final EnergyHandler externalEnergyHandler = new EnergyHandler() {
@@ -73,6 +117,7 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
     };
     private final InputTankHandler inputHandler = new InputTankHandler();
     private final OutputTankHandler outputHandler = new OutputTankHandler();
+    private final ResourceHandler<FluidResource>[] sidedFluidHandlers = createSidedFluidHandlers();
     // Expose output first so automation that chooses "first non-empty tank" extracts product, not feedstock.
     private final ResourceHandler<FluidResource> combinedFluidHandler = new CombinedResourceHandler<>(List.of(outputHandler, inputHandler));
 
@@ -107,6 +152,7 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
 
     public void tickServer() {
         if (level == null || level.isClientSide()) return;
+        clampUpgradesToConfig();
 
         int toProcess = Math.min(getEffectiveProcessRate(), Math.min(inputAmount, outputCapacity - outputAmount));
         if (toProcess <= 0) {
@@ -132,15 +178,43 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
     }
 
     public final boolean installSpeedUpgrade() {
-        if (speedUpgrades >= MAX_SPEED_UPGRADES) return false;
-        speedUpgrades++;
+        return installSpeedUpgrades(1) > 0;
+    }
+
+    public final boolean installEfficiencyUpgrade() {
+        return installEfficiencyUpgrades(1) > 0;
+    }
+
+    public final int installSpeedUpgrades(int requested) {
+        if (requested <= 0) return 0;
+        int availableSlots = Math.max(0, getMaxUpgradesPerType() - speedUpgrades);
+        int toInstall = Math.min(requested, availableSlots);
+        if (toInstall <= 0) return 0;
+        speedUpgrades += toInstall;
+        setChanged();
+        return toInstall;
+    }
+
+    public final int installEfficiencyUpgrades(int requested) {
+        if (requested <= 0) return 0;
+        int availableSlots = Math.max(0, getMaxUpgradesPerType() - efficiencyUpgrades);
+        int toInstall = Math.min(requested, availableSlots);
+        if (toInstall <= 0) return 0;
+        efficiencyUpgrades += toInstall;
+        setChanged();
+        return toInstall;
+    }
+
+    public final boolean uninstallSpeedUpgrade() {
+        if (speedUpgrades <= 0) return false;
+        speedUpgrades--;
         setChanged();
         return true;
     }
 
-    public final boolean installEfficiencyUpgrade() {
-        if (efficiencyUpgrades >= MAX_EFFICIENCY_UPGRADES) return false;
-        efficiencyUpgrades++;
+    public final boolean uninstallEfficiencyUpgrade() {
+        if (efficiencyUpgrades <= 0) return false;
+        efficiencyUpgrades--;
         setChanged();
         return true;
     }
@@ -244,7 +318,7 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
     }
 
     public final ResourceHandler<FluidResource> getFluidHandler(@Nullable Direction side) {
-        return combinedFluidHandler;
+        return side == null ? combinedFluidHandler : sidedFluidHandlers[side.ordinal()];
     }
 
     public final ResourceHandler<FluidResource> getOutputFluidHandler(@Nullable Direction side) {
@@ -255,6 +329,39 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
         return externalEnergyHandler;
     }
 
+    public final SideMode getSideMode(Direction side) {
+        return sideModes[side.ordinal()];
+    }
+
+    public final void cycleSideMode(Direction side) {
+        setSideMode(side, getSideMode(side).next());
+    }
+
+    public final void cycleSideModeReverse(Direction side) {
+        setSideMode(side, getSideMode(side).previous());
+    }
+
+    public final void setSideMode(Direction side, SideMode mode) {
+        int index = side.ordinal();
+        if (sideModes[index] == mode) return;
+        sideModes[index] = mode;
+        setChanged();
+    }
+
+    public final void disableAllSides() {
+        boolean changed = false;
+        for (Direction side : Direction.values()) {
+            int index = side.ordinal();
+            if (sideModes[index] != SideMode.DISABLED) {
+                sideModes[index] = SideMode.DISABLED;
+                changed = true;
+            }
+        }
+        if (changed) {
+            setChanged();
+        }
+    }
+
     @Override
     protected void saveAdditional(ValueOutput output) {
         super.saveAdditional(output);
@@ -263,6 +370,9 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
         output.putInt("ProcessProgress", processProgress);
         output.putInt("SpeedUpgrades", speedUpgrades);
         output.putInt("EfficiencyUpgrades", efficiencyUpgrades);
+        for (Direction side : Direction.values()) {
+            output.putInt("SideMode_" + side.getSerializedName(), sideModes[side.ordinal()].id());
+        }
         output.putChild("Energy", energyHandler);
     }
 
@@ -272,9 +382,38 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
         inputAmount = input.getIntOr("InputAmount", 0);
         outputAmount = input.getIntOr("OutputAmount", 0);
         processProgress = input.getIntOr("ProcessProgress", 0);
-        speedUpgrades = Math.min(MAX_SPEED_UPGRADES, Math.max(0, input.getIntOr("SpeedUpgrades", 0)));
-        efficiencyUpgrades = Math.min(MAX_EFFICIENCY_UPGRADES, Math.max(0, input.getIntOr("EfficiencyUpgrades", 0)));
+        int maxUpgradesPerType = getMaxUpgradesPerType();
+        speedUpgrades = Math.min(maxUpgradesPerType, Math.max(0, input.getIntOr("SpeedUpgrades", 0)));
+        efficiencyUpgrades = Math.min(maxUpgradesPerType, Math.max(0, input.getIntOr("EfficiencyUpgrades", 0)));
+        for (Direction side : Direction.values()) {
+            int modeId = input.getIntOr("SideMode_" + side.getSerializedName(), SideMode.BOTH.id());
+            sideModes[side.ordinal()] = SideMode.fromId(modeId);
+        }
         input.readChild("Energy", energyHandler);
+    }
+
+    public final int getMaxUpgradesPerType() {
+        return readConfiguredMaxUpgradesPerType();
+    }
+
+    private static int readConfiguredMaxUpgradesPerType() {
+        return Math.max(1, Config.maxUpgradesPerType());
+    }
+
+    private void clampUpgradesToConfig() {
+        int maxUpgradesPerType = readConfiguredMaxUpgradesPerType();
+        boolean changed = false;
+        if (speedUpgrades > maxUpgradesPerType) {
+            speedUpgrades = maxUpgradesPerType;
+            changed = true;
+        }
+        if (efficiencyUpgrades > maxUpgradesPerType) {
+            efficiencyUpgrades = maxUpgradesPerType;
+            changed = true;
+        }
+        if (changed) {
+            setChanged();
+        }
     }
 
     private boolean isInputResource(FluidResource resource) {
@@ -295,6 +434,88 @@ public abstract class AbstractPoweredFluidProcessorBlockEntity extends BlockEnti
 
     private FluidResource inputResourceOrEmpty() {
         return inputAmount > 0 ? FluidResource.of(inputSourceSupplier.get()) : FluidResource.EMPTY;
+    }
+
+    private boolean allowsPull(Direction side) {
+        return getSideMode(side).allowsPull();
+    }
+
+    private boolean allowsPush(Direction side) {
+        return getSideMode(side).allowsPush();
+    }
+
+    private static SideMode[] createDefaultSideModes() {
+        SideMode[] modes = new SideMode[Direction.values().length];
+        Arrays.fill(modes, SideMode.BOTH);
+        return modes;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ResourceHandler<FluidResource>[] createSidedFluidHandlers() {
+        ResourceHandler<FluidResource>[] handlers = (ResourceHandler<FluidResource>[]) new ResourceHandler[Direction.values().length];
+        for (Direction direction : Direction.values()) {
+            handlers[direction.ordinal()] = new SidedFluidHandler(direction);
+        }
+        return handlers;
+    }
+
+    private class SidedFluidHandler implements ResourceHandler<FluidResource> {
+        private final Direction side;
+
+        private SidedFluidHandler(Direction side) {
+            this.side = side;
+        }
+
+        @Override
+        public int size() {
+            return 2;
+        }
+
+        @Override
+        public FluidResource getResource(int index) {
+            return switch (index) {
+                case 0 -> inputResourceOrEmpty();
+                case 1 -> outputResourceOrEmpty();
+                default -> FluidResource.EMPTY;
+            };
+        }
+
+        @Override
+        public long getAmountAsLong(int index) {
+            return switch (index) {
+                case 0 -> inputAmount;
+                case 1 -> outputAmount;
+                default -> 0;
+            };
+        }
+
+        @Override
+        public long getCapacityAsLong(int index, FluidResource resource) {
+            if (index == 0) {
+                return (resource.isEmpty() || isInputResource(resource)) ? inputCapacity : 0;
+            }
+            if (index == 1) {
+                return (resource.isEmpty() || isOutputResource(resource)) ? outputCapacity : 0;
+            }
+            return 0;
+        }
+
+        @Override
+        public boolean isValid(int index, FluidResource resource) {
+            return index == 0 && isInputResource(resource) && allowsPull(side);
+        }
+
+        @Override
+        public int insert(int index, FluidResource resource, int amount, TransactionContext transaction) {
+            if (!allowsPull(side) || index != 0) return 0;
+            return inputHandler.insert(0, resource, amount, transaction);
+        }
+
+        @Override
+        public int extract(int index, FluidResource resource, int amount, TransactionContext transaction) {
+            if (!allowsPush(side) || index != 1) return 0;
+            return outputHandler.extract(0, resource, amount, transaction);
+        }
     }
 
     private class InputTankHandler extends SnapshotJournal<Integer> implements ResourceHandler<FluidResource> {
