@@ -12,7 +12,6 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.neoforged.bus.api.IEventBus;
@@ -22,12 +21,11 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.OnDatapackSyncEvent;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -37,7 +35,13 @@ import com.example.commontransports.block.entity.ModBlockEntities;
 import com.example.commontransports.fluid.GasCanItem;
 import com.example.commontransports.fluid.ModFluids;
 import com.example.commontransports.menu.ModMenuTypes;
+import com.example.commontransports.network.ProcessingActionPayload;
+import com.example.commontransports.network.ProcessingPayloadHandler;
+import com.example.commontransports.network.RefineryActionPayload;
+import com.example.commontransports.network.RefineryPayloadHandler;
+import com.example.commontransports.vehicle.entity.ChopperEntity;
 import com.example.commontransports.vehicle.entity.MotorcycleEntity;
+import com.example.commontransports.vehicle.item.ChopperItem;
 import com.example.commontransports.vehicle.item.MotorcycleItem;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
@@ -74,7 +78,10 @@ public class GenericMod {
     public static final DeferredItem<Item> MOTORCYCLE_BODY = ITEMS.registerItem("motorcycle_body", Item::new);
     public static final DeferredItem<Item> MOTORCYCLE_TANK = ITEMS.registerItem("motorcycle_tank", Item::new);
     public static final DeferredItem<Item> MOTORCYCLE_ITEM = ITEMS.registerItem("motorcycle", MotorcycleItem::new);
+    public static final DeferredItem<Item> CHOPPER_ITEM = ITEMS.registerItem("chopper", ChopperItem::new);
     public static final DeferredItem<Item> GAS_CAN = ITEMS.registerItem("gas_can", GasCanItem::new);
+    public static final DeferredItem<Item> SPEED_UPGRADE = ITEMS.registerItem("speed_upgrade", Item::new);
+    public static final DeferredItem<Item> EFFICIENCY_UPGRADE = ITEMS.registerItem("efficiency_upgrade", Item::new);
 
     public static final DeferredHolder<EntityType<?>, EntityType<MotorcycleEntity>> MOTORCYCLE = ENTITIES.register(
             "motorcycle",
@@ -82,6 +89,12 @@ public class GenericMod {
                     .sized(0.9f, 0.8f) // width x height - smaller hitbox
                     .build(ResourceKey.create(Registries.ENTITY_TYPE,
                             Identifier.fromNamespaceAndPath(MODID, "motorcycle"))));
+    public static final DeferredHolder<EntityType<?>, EntityType<ChopperEntity>> CHOPPER = ENTITIES.register(
+            "chopper",
+            () -> EntityType.Builder.<ChopperEntity>of(ChopperEntity::new, MobCategory.MISC)
+                    .sized(0.9f, 0.8f)
+                    .build(ResourceKey.create(Registries.ENTITY_TYPE,
+                            Identifier.fromNamespaceAndPath(MODID, "chopper"))));
     public static final DeferredHolder<SoundEvent, SoundEvent> MOTORCYCLE_IDLE_SOUND = SOUND_EVENTS.register(
             "motorcycle_idle",
             () -> SoundEvent.createVariableRangeEvent(Identifier.fromNamespaceAndPath(MODID, "motorcycle_idle")));
@@ -102,11 +115,20 @@ public class GenericMod {
                         output.accept(MOTORCYCLE_BODY.get());
                         output.accept(MOTORCYCLE_TANK.get());
                         output.accept(MOTORCYCLE_ITEM.get());
+                        output.accept(CHOPPER_ITEM.get());
                         output.accept(GAS_CAN.get());
-                        // Fluid bucket (only crude oil - petrol requires refinery)
+                        output.accept(SPEED_UPGRADE.get());
+                        output.accept(EFFICIENCY_UPGRADE.get());
+                        // Fluid buckets (feedstock/intermediates; petrol remains machine-only)
                         output.accept(ModFluids.CRUDE_OIL_BUCKET.get());
+                        output.accept(ModFluids.NAPHTHA_BUCKET.get());
+                        output.accept(ModFluids.REFORMATE_BUCKET.get());
                         // Machines
                         output.accept(ModBlocks.REFINERY_ITEM.get());
+                        output.accept(ModBlocks.DISTILLATION_TOWER_ITEM.get());
+                        output.accept(ModBlocks.CATALYTIC_REFORMER_ITEM.get());
+                        output.accept(ModBlocks.CREATIVE_ENERGY_CELL_ITEM.get());
+                        output.accept(ModBlocks.BASIC_FLUID_PIPE_ITEM.get());
                     }).build());
 
     // The constructor for the mod class is the first code that is run when your mod
@@ -148,6 +170,8 @@ public class GenericMod {
         
         // Register capabilities (for pipe/automation support)
         modEventBus.addListener(this::registerCapabilities);
+        // Register refinery GUI action payload (flush tanks)
+        modEventBus.addListener(this::registerPayloads);
 
         // Register our mod's ModConfigSpec so that FML can create and load the config
         // file for us
@@ -162,7 +186,56 @@ public class GenericMod {
             ModBlockEntities.REFINERY.get(),
             (refinery, side) -> refinery.getFluidHandler(side)
         );
-        LOGGER.info("Registered fluid handler capability for Refinery");
+        event.registerBlockEntity(
+            Capabilities.Energy.BLOCK,
+            ModBlockEntities.REFINERY.get(),
+            (refinery, side) -> refinery.getEnergyHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Fluid.BLOCK,
+            ModBlockEntities.DISTILLATION_TOWER.get(),
+            (tower, side) -> tower.getFluidHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Energy.BLOCK,
+            ModBlockEntities.DISTILLATION_TOWER.get(),
+            (tower, side) -> tower.getEnergyHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Fluid.BLOCK,
+            ModBlockEntities.CATALYTIC_REFORMER.get(),
+            (reformer, side) -> reformer.getFluidHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Energy.BLOCK,
+            ModBlockEntities.CATALYTIC_REFORMER.get(),
+            (reformer, side) -> reformer.getEnergyHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Energy.BLOCK,
+            ModBlockEntities.CREATIVE_ENERGY_CELL.get(),
+            (cell, side) -> cell.getEnergyHandler(side)
+        );
+        event.registerBlockEntity(
+            Capabilities.Fluid.BLOCK,
+            ModBlockEntities.BASIC_FLUID_PIPE.get(),
+            (pipe, side) -> pipe.getFluidHandler(side)
+        );
+        LOGGER.info("Registered fluid/energy capabilities for machines, creative cell, and basic fluid pipe");
+    }
+
+    private void registerPayloads(RegisterPayloadHandlersEvent event) {
+        var registrar = event.registrar(GenericMod.MODID).versioned("1");
+        registrar.playToServer(
+            RefineryActionPayload.TYPE,
+            RefineryActionPayload.STREAM_CODEC,
+            RefineryPayloadHandler::handleRefineryAction
+        );
+        registrar.playToServer(
+            ProcessingActionPayload.TYPE,
+            ProcessingActionPayload.STREAM_CODEC,
+            ProcessingPayloadHandler::handleProcessingAction
+        );
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
@@ -174,7 +247,10 @@ public class GenericMod {
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(MOTORCYCLE_ITEM.get());
+            event.accept(CHOPPER_ITEM.get());
             event.accept(GAS_CAN.get());
+            event.accept(SPEED_UPGRADE.get());
+            event.accept(EFFICIENCY_UPGRADE.get());
         }
     }
 
@@ -185,24 +261,4 @@ public class GenericMod {
         LOGGER.info("HELLO from server starting");
     }
 
-    @SubscribeEvent
-    public void onServerStarted(ServerStartedEvent event) {
-        var recipes = event.getServer().getRecipeManager().getRecipes();
-        long commonTransportsRecipes = recipes.stream()
-                .filter(holder -> holder.id().identifier().getNamespace().equals(MODID))
-                .count();
-        LOGGER.info("Server recipes loaded: total={}, {} for {}", recipes.size(), commonTransportsRecipes, MODID);
-        recipes.stream()
-                .filter(holder -> holder.id().identifier().getNamespace().equals(MODID))
-                .map(holder -> holder.id().identifier().toString())
-                .sorted()
-                .limit(20)
-                .forEach(id -> LOGGER.info("Recipe: {}", id));
-    }
-
-    @SubscribeEvent
-    public void onDatapackSync(OnDatapackSyncEvent event) {
-        event.sendRecipes(RecipeType.CRAFTING);
-        LOGGER.info("Requested crafting recipe sync for {}", MODID);
-    }
 }

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IGI",
+    "IFI",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "G": "minecraft:gold_ingot",
+    "F": "minecraft:blast_furnace",
+    "R": "common_transports:refinery"
+  },
+  "result": {
+    "id": "common_transports:catalytic_reformer",
+    "count": 1
+  }
+}

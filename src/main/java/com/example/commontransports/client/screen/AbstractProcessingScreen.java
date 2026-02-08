@@ -32,24 +32,8 @@ public abstract class AbstractProcessingScreen<M extends AbstractContainerMenu &
 
     @Override
     protected void init() {
-        super.init();
-        updateScreenPosition();
+        super.init();  // vanilla centres the screen (sets leftPos/topPos)
         this.titleLabelX = (this.imageWidth - this.font.width(this.title)) / 2;
-    }
-
-    @Override
-    protected void repositionElements() {
-        updateScreenPosition();
-        super.repositionElements();
-    }
-
-    protected void updateScreenPosition() {
-        if (this.width > 0 && this.imageWidth > 0) {
-            this.leftPos = (this.width - this.imageWidth) / 2;
-        }
-        if (this.height > 0 && this.imageHeight > 0) {
-            this.topPos = (this.height - this.imageHeight) / 2;
-        }
     }
 
     /**
@@ -87,6 +71,19 @@ public abstract class AbstractProcessingScreen<M extends AbstractContainerMenu &
         GuiUtils.fill(graphics, x + 1, y + 1, width - 2, height - 2, 0xFF2a2a2a);
         if (progressPx > 0) {
             GuiUtils.fill(graphics, x + 1, y + 1, progressPx, height - 2, fillColor);
+        }
+    }
+
+    /**
+     * Draw a vertical meter filled from bottom to top.
+     */
+    protected void drawVerticalBar(GuiGraphics graphics, int x, int y, int width, int height, int fillPx, int fillColor) {
+        GuiUtils.drawOutline(graphics, x, y, width, height, 0xFF4a4a4a);
+        GuiUtils.fill(graphics, x + 1, y + 1, width - 2, height - 2, 0xFF2a2a2a);
+        if (fillPx > 0) {
+            int clampedFill = Math.min(fillPx, height - 2);
+            int fy = y + height - 1 - clampedFill;
+            GuiUtils.fill(graphics, x + 1, fy, width - 2, clampedFill, fillColor);
         }
     }
 

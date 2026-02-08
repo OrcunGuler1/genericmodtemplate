@@ -12,7 +12,6 @@ import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.ComputeFovModifierEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RecipesReceivedEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.client.event.RenderLivingEvent;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -21,21 +20,26 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeType;
 
+import com.example.commontransports.client.gui.VehicleFuelHudOverlay;
+import com.example.commontransports.client.screen.CatalyticReformerScreen;
+import com.example.commontransports.client.screen.DistillationTowerScreen;
 import com.example.commontransports.client.screen.RefineryScreen;
 import com.example.commontransports.fluid.ModFluids;
 import com.example.commontransports.menu.ModMenuTypes;
+import com.example.commontransports.vehicle.client.model.HarleyMinestoneModel;
 import com.example.commontransports.vehicle.client.model.MotorcycleModel;
+import com.example.commontransports.vehicle.client.render.ChopperRenderer;
 import com.example.commontransports.vehicle.client.render.MotorcycleRenderer;
 import com.example.commontransports.vehicle.client.sound.MotorcycleIdleSoundInstance;
+import com.example.commontransports.vehicle.entity.AbstractStatsVehicleEntity;
 import com.example.commontransports.vehicle.entity.MotorcycleEntity;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
@@ -62,7 +66,6 @@ public class GenericModClient {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         NeoForge.EVENT_BUS.addListener(GenericModClient::onComputeFov);
         NeoForge.EVENT_BUS.addListener(GenericModClient::onClientTick);
-        NeoForge.EVENT_BUS.addListener(GenericModClient::onRecipesReceived);
         NeoForge.EVENT_BUS.addListener(GenericModClient::onCameraSetup);
         NeoForge.EVENT_BUS.addListener(GenericModClient::onRenderLivingPre);
         NeoForge.EVENT_BUS.addListener(GenericModClient::onRenderLivingPost);
@@ -78,16 +81,27 @@ public class GenericModClient {
     @SubscribeEvent
     static void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(GenericMod.MOTORCYCLE.get(), MotorcycleRenderer::new);
+        event.registerEntityRenderer(GenericMod.CHOPPER.get(), ChopperRenderer::new);
     }
 
     @SubscribeEvent
     static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
         event.registerLayerDefinition(MotorcycleModel.LAYER_LOCATION, MotorcycleModel::createBodyLayer);
+        event.registerLayerDefinition(HarleyMinestoneModel.LAYER_LOCATION, HarleyMinestoneModel::createBodyLayer);
     }
 
     @SubscribeEvent
     static void registerMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.REFINERY.get(), RefineryScreen::new);
+        event.register(ModMenuTypes.DISTILLATION_TOWER.get(), DistillationTowerScreen::new);
+        event.register(ModMenuTypes.CATALYTIC_REFORMER.get(), CatalyticReformerScreen::new);
+    }
+
+    @SubscribeEvent
+    static void registerGuiLayers(RegisterGuiLayersEvent event) {
+        event.registerAboveAll(
+                Identifier.fromNamespaceAndPath(GenericMod.MODID, "vehicle_fuel_hud"),
+                VehicleFuelHudOverlay::render);
     }
 
     @SubscribeEvent
@@ -110,6 +124,42 @@ public class GenericModClient {
             }
         }, ModFluids.CRUDE_OIL_TYPE.get());
 
+        // Naphtha - lighter hydrocarbon tint
+        event.registerFluidType(new IClientFluidTypeExtensions() {
+            @Override
+            public int getTintColor() {
+                return 0xFF8C6B3A;
+            }
+
+            @Override
+            public Identifier getStillTexture() {
+                return Identifier.fromNamespaceAndPath("minecraft", "block/water_still");
+            }
+
+            @Override
+            public Identifier getFlowingTexture() {
+                return Identifier.fromNamespaceAndPath("minecraft", "block/water_flow");
+            }
+        }, ModFluids.NAPHTHA_TYPE.get());
+
+        // Reformate - lighter amber intermediate from catalytic reforming
+        event.registerFluidType(new IClientFluidTypeExtensions() {
+            @Override
+            public int getTintColor() {
+                return 0xFFb1864a;
+            }
+
+            @Override
+            public Identifier getStillTexture() {
+                return Identifier.fromNamespaceAndPath("minecraft", "block/water_still");
+            }
+
+            @Override
+            public Identifier getFlowingTexture() {
+                return Identifier.fromNamespaceAndPath("minecraft", "block/water_flow");
+            }
+        }, ModFluids.REFORMATE_TYPE.get());
+
         // Petrol - amber/golden color, uses vanilla water textures with tint
         event.registerFluidType(new IClientFluidTypeExtensions() {
             @Override
@@ -130,11 +180,11 @@ public class GenericModClient {
     }
 
     private static void onComputeFov(ComputeFovModifierEvent event) {
-        if (!(event.getPlayer().getVehicle() instanceof MotorcycleEntity motorcycle)) {
+        if (!(event.getPlayer().getVehicle() instanceof AbstractStatsVehicleEntity vehicle)) {
             return;
         }
-        float speed = (float) motorcycle.getDeltaMovement().horizontalDistance();
-        float ratio = Mth.clamp(speed / motorcycle.getMaxSpeed(), 0.0f, 1.0f);
+        float speed = (float) vehicle.getDeltaMovement().horizontalDistance();
+        float ratio = Mth.clamp(speed / vehicle.getMaxSpeed(), 0.0f, 1.0f);
         event.setNewFovModifier(event.getNewFovModifier() * (1.0f + ratio * 0.25f));
     }
 
@@ -143,12 +193,12 @@ public class GenericModClient {
         if (minecraft.player == null) {
             return;
         }
-        if (!(minecraft.player.getVehicle() instanceof MotorcycleEntity motorcycle)) {
+        if (!(minecraft.player.getVehicle() instanceof AbstractStatsVehicleEntity vehicle)) {
             return;
         }
 
         // Apply camera roll based on motorcycle lean
-        float lean = motorcycle.getCurrentLean();
+        float lean = vehicle.getCurrentLean();
         float cameraRoll = -(lean * 0.8f); // 40% of bike lean applied to camera
         event.setRoll(event.getRoll() + cameraRoll);
     }
@@ -202,7 +252,7 @@ public class GenericModClient {
         float lean = smoothed != null ? smoothed : (raw != null ? raw : 0f);
         Entity entity = minecraft.level.getEntity(bestId);
         float bikeYaw = 0f;
-        if (entity != null && entity.getVehicle() instanceof MotorcycleEntity bike) {
+        if (entity != null && entity.getVehicle() instanceof AbstractStatsVehicleEntity bike) {
             bikeYaw = Mth.lerp(partialTick, bike.yRotO, bike.getYRot());
         }
         return new RiderLeanState(lean, bikeYaw);
@@ -249,9 +299,9 @@ public class GenericModClient {
         // Update raw lean for all passengers on motorcycles
         motorcyclePassengerLean.clear();
         for (Entity entity : minecraft.level.entitiesForRendering()) {
-            if (entity.getVehicle() instanceof MotorcycleEntity motorcycle) {
+            if (entity.getVehicle() instanceof AbstractStatsVehicleEntity statsVehicle) {
                 int id = entity.getId();
-                float raw = motorcycle.getCurrentLean();
+                float raw = statsVehicle.getCurrentLean();
                 motorcyclePassengerLean.put(id, raw);
                 // Lerp smoothed lean towards raw to reduce twitching
                 float prev = motorcyclePassengerSmoothedLean.getOrDefault(id, raw);
@@ -264,20 +314,38 @@ public class GenericModClient {
 
         // Handle idle sound for local player
         if (!(minecraft.player.getVehicle() instanceof MotorcycleEntity motorcycle)) {
-            stopIdleSound();
+            fadeOutIdleSound();
             return;
         }
         if (motorcycle.getDeltaMovement().horizontalDistanceSqr() > 0.001) {
-            stopIdleSound();
+            fadeOutIdleSound();
             return;
         }
+        // Start a new instance if there is none, or the previous one finished/is fading,
+        // or the player switched to a different motorcycle.
         if (idleSoundInstance == null || idleSoundInstance.isStopped()
+                || idleSoundInstance.isFadingOut()
                 || idleSoundInstance.getMotorcycleId() != motorcycle.getId()) {
+            // Let any old instance finish its fade-out on its own (SoundManager still ticks it)
             idleSoundInstance = new MotorcycleIdleSoundInstance(motorcycle);
             minecraft.getSoundManager().play(idleSoundInstance);
         }
     }
 
+    /**
+     * Gracefully fade out the current idle sound instead of cutting it instantly.
+     * The old instance keeps ticking inside SoundManager until its volume reaches zero.
+     */
+    private static void fadeOutIdleSound() {
+        if (idleSoundInstance != null) {
+            if (!idleSoundInstance.isStopped()) {
+                idleSoundInstance.fadeOut();
+            }
+            idleSoundInstance = null; // release reference; SoundManager manages the fade
+        }
+    }
+
+    /** Hard-stop with no fade (used when the world/player is null). */
     private static void stopIdleSound() {
         if (idleSoundInstance != null) {
             idleSoundInstance.stopSound();
@@ -285,20 +353,4 @@ public class GenericModClient {
         }
     }
 
-    private static void onRecipesReceived(RecipesReceivedEvent event) {
-        int totalCrafting = event.getRecipeMap().byType(RecipeType.CRAFTING).size();
-        var commonTransportsCraftingRecipes = event.getRecipeMap()
-                .byType(RecipeType.CRAFTING)
-                .stream()
-                .map(RecipeHolder::id)
-                .filter(key -> key.identifier().getNamespace().equals(GenericMod.MODID))
-                .map(key -> key.identifier().toString())
-                .sorted()
-                .toList();
-        GenericMod.LOGGER.info("Recipes received: crafting total={}, {} crafting for {}",
-                totalCrafting, commonTransportsCraftingRecipes.size(), GenericMod.MODID);
-        commonTransportsCraftingRecipes.stream()
-                .limit(20)
-                .forEach(id -> GenericMod.LOGGER.info("Client crafting recipe: {}", id));
-    }
 }

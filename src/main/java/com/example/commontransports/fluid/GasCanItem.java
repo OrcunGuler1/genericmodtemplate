@@ -53,6 +53,12 @@ public class GasCanItem extends Item implements FluidContainerItem {
 
     private static void setFluidAmountStatic(ItemStack stack, int amount) {
         CompoundTag tag = new CompoundTag();
+        if (stack.has(DataComponents.CUSTOM_DATA)) {
+            CustomData customData = stack.get(DataComponents.CUSTOM_DATA);
+            if (customData != null) {
+                tag = customData.copyTag();
+            }
+        }
         tag.putInt("FluidAmount", Math.max(0, Math.min(amount, CAPACITY)));
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
@@ -75,7 +81,6 @@ public class GasCanItem extends Item implements FluidContainerItem {
 
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> tooltipAdder, TooltipFlag flag) {
-        super.appendHoverText(stack, context, display, tooltipAdder, flag);
         int amount = getFluidAmount(stack);
         if (amount > 0) {
             tooltipAdder.accept(Component.literal("Petrol: " + amount + " / " + CAPACITY + " mB").withStyle(style -> style.withColor(0xD4A017)));

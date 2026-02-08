@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "common_transports:block/catalytic_reformer"
+    }
+  }
+}

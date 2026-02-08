@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IPI",
+    "IFI",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "P": "minecraft:copper_block",
+    "F": "minecraft:furnace",
+    "R": "common_transports:refinery"
+  },
+  "result": {
+    "id": "common_transports:distillation_tower",
+    "count": 1
+  }
+}

@@ -1,0 +1,92 @@
+package com.example.commontransports.vehicle.entity;
+
+import com.example.commontransports.GenericMod;
+import com.example.commontransports.api.entity.VehicleStats;
+import com.example.commontransports.api.item.FluidContainerItem;
+
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gameevent.GameEvent;
+
+/**
+ * Chopper entity. Uses {@link VehicleStats#CHOPPER} and fuels from gas cans.
+ */
+public class ChopperEntity extends AbstractStatsVehicleEntity {
+
+    private static final EntityDataAccessor<Integer> FUEL = SynchedEntityData.defineId(ChopperEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DURABILITY = SynchedEntityData.defineId(ChopperEntity.class, EntityDataSerializers.INT);
+
+    public ChopperEntity(EntityType<? extends ChopperEntity> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    public VehicleStats getStats() {
+        return VehicleStats.CHOPPER;
+    }
+
+    @Override
+    public Item getDropItem() {
+        return GenericMod.CHOPPER_ITEM.get();
+    }
+
+    @Override
+    public boolean isFuelItem(ItemStack stack) {
+        return stack.is(GenericMod.GAS_CAN.get());
+    }
+
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(FUEL, 0);
+        builder.define(DURABILITY, VehicleStats.CHOPPER.maxDurability);
+    }
+
+    @Override
+    public int getFuel() { return entityData.get(FUEL); }
+
+    @Override
+    public void setFuel(int value) { entityData.set(FUEL, Mth.clamp(value, 0, getStats().maxFuel)); }
+
+    @Override
+    public int getDurability() { return entityData.get(DURABILITY); }
+
+    @Override
+    public void setDurability(int value) {
+        entityData.set(DURABILITY, Mth.clamp(value, 0, getStats().maxDurability));
+    }
+
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (level.isClientSide() || isRemoved()) return true;
+        if (isInvulnerable()) return false;
+        float scaled = amount * (getStats().maxDurability / 3.0f);
+        return applyDamage(source, scaled);
+    }
+
+    @Override
+    protected InteractionResult handleFueling(Player player, ItemStack held) {
+        if (getFuel() >= getStats().maxFuel) return InteractionResult.PASS;
+        if (held.getItem() instanceof FluidContainerItem fc) {
+            int canFuel = fc.getFluidAmount(held);
+            if (canFuel <= 0) return InteractionResult.PASS;
+            int spaceInTank = getStats().maxFuel - getFuel();
+            int toTransfer = Math.min(canFuel, spaceInTank);
+            if (toTransfer > 0 && !player.getAbilities().instabuild) fc.consumeFuel(held, toTransfer);
+            setFuel(getFuel() + toTransfer);
+            gameEvent(GameEvent.ENTITY_INTERACT);
+            return InteractionResult.SUCCESS;
+        }
+        return InteractionResult.PASS;
+    }
+}
